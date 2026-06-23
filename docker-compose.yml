@@ -1,0 +1,41 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: purplesoft
+      POSTGRES_USER: purplesoft
+      POSTGRES_PASSWORD: purplesoft
+    ports:
+      - "5438:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U purplesoft -d purplesoft"]
+      interval: 5s
+      timeout: 5s
+      retries: 8
+
+  backend:
+    build:
+      context: ./backend
+    environment:
+      DATABASE_URL: postgresql+psycopg://purplesoft:purplesoft@postgres:5432/purplesoft
+      CORS_ORIGINS: http://localhost:5178,http://127.0.0.1:5178
+    ports:
+      - "8088:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+    environment:
+      VITE_API_URL: http://localhost:8088
+    ports:
+      - "5178:5173"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
