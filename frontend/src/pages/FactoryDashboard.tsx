@@ -13,6 +13,7 @@ import {
   Users,
   Workflow
 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import "./FactoryDashboard.css";
 
 type MachineKind = "document" | "terminal" | "finance" | "triage";
@@ -22,6 +23,7 @@ type LayoutState = Record<LayoutId, Position>;
 type SocketSide = "in" | "out";
 type SocketState = Record<LayoutId, Record<SocketSide, Position>>;
 type Connection = { id: string; from: LayoutId; to: LayoutId; tone?: "blue" | "green" };
+type AreaRouteId = "entrada" | "cadastro" | "financeiro" | "triagem" | "contabil" | "pessoal" | "consolidacao" | "entrega";
 
 type Lane = {
   label: string;
@@ -45,6 +47,20 @@ const peopleLanes: Lane[] = [
 
 const layoutStorageKey = "purplesoft_factory_dashboard_layout_v1";
 const socketStorageKey = "purplesoft_factory_dashboard_sockets_v1";
+
+const stageSize = { width: 1440, height: 760 };
+const factoryWorld = { width: 2200, height: 1200 };
+
+const areaRoutes: Partial<Record<LayoutId, AreaRouteId>> = {
+  entry: "entrada",
+  register: "cadastro",
+  financial: "financeiro",
+  triage: "triagem",
+  accounting: "contabil",
+  people: "pessoal",
+  consolidation: "consolidacao",
+  delivery: "entrega"
+};
 
 const defaultLayout: LayoutState = {
   entry: { x: 58, y: 72 },
@@ -80,11 +96,45 @@ const defaultSockets = Object.fromEntries(
   ])
 ) as SocketState;
 
+function finiteOr(value: unknown, fallback: number) {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function clampPan(position: Position): Position {
+  return {
+    x: clamp(position.x, stageSize.width - factoryWorld.width, 0),
+    y: clamp(position.y, stageSize.height - factoryWorld.height, 0)
+  };
+}
+
+function clampNodePosition(id: LayoutId, position: Position): Position {
+  const size = nodeSize[id];
+  return {
+    x: clamp(position.x, 0, factoryWorld.width - size.width),
+    y: clamp(position.y, 0, factoryWorld.height - size.height)
+  };
+}
+
 function loadLayout(): LayoutState {
   const stored = localStorage.getItem(layoutStorageKey);
   if (!stored) return defaultLayout;
   try {
-    return { ...defaultLayout, ...(JSON.parse(stored) as Partial<LayoutState>) };
+    const parsed = JSON.parse(stored) as Partial<LayoutState>;
+    return (Object.keys(defaultLayout) as LayoutId[]).reduce((layout, id) => {
+      const position = parsed[id];
+      const x = position?.x;
+      const y = position?.y;
+      layout[id] = {
+        x: finiteOr(x, defaultLayout[id].x),
+        y: finiteOr(y, defaultLayout[id].y)
+      };
+      layout[id] = clampNodePosition(id, layout[id]);
+      return layout;
+    }, {} as LayoutState);
   } catch {
     return defaultLayout;
   }
@@ -99,7 +149,24 @@ function loadSockets(): SocketState {
   if (!stored) return defaultSockets;
   try {
     const parsed = JSON.parse(stored) as Partial<SocketState>;
-    return { ...defaultSockets, ...parsed };
+    return (Object.keys(defaultSockets) as LayoutId[]).reduce((sockets, id) => {
+      const savedNode = parsed[id];
+      const inX = savedNode?.in?.x;
+      const inY = savedNode?.in?.y;
+      const outX = savedNode?.out?.x;
+      const outY = savedNode?.out?.y;
+      sockets[id] = {
+        in: {
+          x: finiteOr(inX, defaultSockets[id].in.x),
+          y: finiteOr(inY, defaultSockets[id].in.y)
+        },
+        out: {
+          x: finiteOr(outX, defaultSockets[id].out.x),
+          y: finiteOr(outY, defaultSockets[id].out.y)
+        }
+      };
+      return sockets;
+    }, {} as SocketState);
   } catch {
     return defaultSockets;
   }
@@ -107,6 +174,13 @@ function loadSockets(): SocketState {
 
 function saveSockets(sockets: SocketState) {
   localStorage.setItem(socketStorageKey, JSON.stringify(sockets));
+}
+
+function scaleFromStage(target: Element) {
+  const stage = target.closest(".fd-stage");
+  if (!stage) return 1;
+  const rect = stage.getBoundingClientRect();
+  return rect.width / stageSize.width || 1;
 }
 
 function absoluteSocket(layout: LayoutState, sockets: SocketState, id: LayoutId, side: SocketSide): Position {
@@ -268,7 +342,7 @@ function FocusPanel() {
 
 function ConveyorSvg({ layout, sockets }: { layout: LayoutState; sockets: SocketState }) {
   return (
-    <svg className="fd-connections" viewBox="0 0 1440 760" aria-hidden="true">
+    <svg className="fd-connections" viewBox={`0 0 ${factoryWorld.width} ${factoryWorld.height}`} aria-hidden="true">
       <defs>
         <linearGradient id="fd-belt" x1="0" x2="1">
           <stop offset="0%" stopColor="#41536f" />
@@ -316,13 +390,6 @@ function DraggableNode({ id, layout, onMove, designMode, className = "", childre
   const dragRef = useRef({ active: false, startX: 0, startY: 0, originX: 0, originY: 0 });
   const position = layout[id];
 
-  function scaleFromStage(target: EventTarget & HTMLDivElement) {
-    const stage = target.closest(".fd-stage");
-    if (!stage) return 1;
-    const rect = stage.getBoundingClientRect();
-    return rect.width / 1440 || 1;
-  }
-
   function onPointerDown(event: React.PointerEvent<HTMLDivElement>) {
     if (!designMode) return;
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -356,6 +423,9 @@ function DraggableNode({ id, layout, onMove, designMode, className = "", childre
   return (
     <div
       className={`fd-node ${designMode ? "fd-node-design" : ""} ${className}`}
+      data-area-id={areaRoutes[id]}
+      role={!designMode && areaRoutes[id] ? "button" : undefined}
+      tabIndex={!designMode && areaRoutes[id] ? 0 : undefined}
       style={{ left: position.x, top: position.y }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
@@ -373,13 +443,6 @@ function SocketHandle({ side, position, onMove }: {
   onMove: (position: Position) => void;
 }) {
   const dragRef = useRef({ active: false, startX: 0, startY: 0, originX: 0, originY: 0 });
-
-  function scaleFromStage(target: EventTarget & HTMLSpanElement) {
-    const stage = target.closest(".fd-stage");
-    if (!stage) return 1;
-    const rect = stage.getBoundingClientRect();
-    return rect.width / 1440 || 1;
-  }
 
   function onPointerDown(event: React.PointerEvent<HTMLSpanElement>) {
     event.stopPropagation();
@@ -426,15 +489,27 @@ function SocketHandle({ side, position, onMove }: {
 }
 
 export default function FactoryDashboard() {
+  const navigate = useNavigate();
   const [layout, setLayout] = useState<LayoutState>(() => loadLayout());
   const [sockets, setSockets] = useState<SocketState>(() => loadSockets());
   const [designMode, setDesignMode] = useState(false);
   const [savedMessage, setSavedMessage] = useState("");
+  const [viewportPan, setViewportPan] = useState<Position>({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState(false);
+  const panRef = useRef({
+    active: false,
+    moved: false,
+    startX: 0,
+    startY: 0,
+    originX: 0,
+    originY: 0,
+    areaId: ""
+  });
 
   function moveNode(id: LayoutId, position: Position) {
     setLayout((current) => {
       setSavedMessage("");
-      return { ...current, [id]: position };
+      return { ...current, [id]: clampNodePosition(id, position) };
     });
   }
 
@@ -443,6 +518,7 @@ export default function FactoryDashboard() {
     localStorage.removeItem(socketStorageKey);
     setLayout(defaultLayout);
     setSockets(defaultSockets);
+    setViewportPan(clampPan({ x: 0, y: 0 }));
     setSavedMessage("Layout resetado");
   }
 
@@ -463,6 +539,66 @@ export default function FactoryDashboard() {
     saveLayout(layout);
     saveSockets(sockets);
     setSavedMessage("Layout salvo");
+  }
+
+  function onWorldPointerDown(event: React.PointerEvent<HTMLDivElement>) {
+    if (designMode || event.button !== 0) return;
+    const clickedNode = (event.target as HTMLElement).closest<HTMLElement>(".fd-node[data-area-id]");
+    event.currentTarget.setPointerCapture(event.pointerId);
+    panRef.current = {
+      active: true,
+      moved: false,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: viewportPan.x,
+      originY: viewportPan.y,
+      areaId: clickedNode?.dataset.areaId ?? ""
+    };
+    setIsPanning(true);
+  }
+
+  function onWorldPointerMove(event: React.PointerEvent<HTMLDivElement>) {
+    if (!panRef.current.active) return;
+    const scale = scaleFromStage(event.currentTarget);
+    const deltaX = event.clientX - panRef.current.startX;
+    const deltaY = event.clientY - panRef.current.startY;
+    if (Math.abs(deltaX) > 5 || Math.abs(deltaY) > 5) {
+      panRef.current.moved = true;
+    }
+    setViewportPan(clampPan({
+      x: Math.round(panRef.current.originX + deltaX / scale),
+      y: Math.round(panRef.current.originY + deltaY / scale)
+    }));
+  }
+
+  function onWorldPointerUp(event: React.PointerEvent<HTMLDivElement>) {
+    if (!panRef.current.active) return;
+    const { areaId, moved } = panRef.current;
+    panRef.current.active = false;
+    setIsPanning(false);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    if (areaId && !moved) {
+      navigate(`/area/${areaId}`);
+    }
+  }
+
+  function onWorldPointerCancel(event: React.PointerEvent<HTMLDivElement>) {
+    if (!panRef.current.active) return;
+    panRef.current.active = false;
+    setIsPanning(false);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  }
+
+  function onWorldKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (designMode || (event.key !== "Enter" && event.key !== " ")) return;
+    const areaId = (event.target as HTMLElement).dataset.areaId;
+    if (!areaId) return;
+    event.preventDefault();
+    navigate(`/area/${areaId}`);
   }
 
   function withSockets(id: LayoutId, children: React.ReactNode) {
@@ -487,29 +623,45 @@ export default function FactoryDashboard() {
   return (
     <main className="fd-page">
       <section className="fd-scale-shell">
-        <div className="fd-stage">
-          <div className="fd-floor" />
-          <ConveyorSvg layout={layout} sockets={sockets} />
+        <div className={`fd-stage ${designMode ? "fd-stage-design" : ""} ${isPanning ? "fd-stage-panning" : ""}`}>
           <div className="fd-design-toolbar">
             <button className={designMode ? "active" : ""} type="button" onClick={() => setDesignMode((value) => !value)}>
               {designMode ? "Sair do design" : "Modo design"}
             </button>
             <button type="button" onClick={saveCurrentLayout}>Salvar posição</button>
+            <button type="button" onClick={() => setViewportPan(clampPan({ x: 0, y: 0 }))}>Centralizar visão</button>
             <button type="button" onClick={resetLayout}>Resetar layout</button>
             {savedMessage && <span>{savedMessage}</span>}
           </div>
 
-          <DraggableNode id="entry" layout={layout} onMove={moveNode} designMode={designMode}>{withSockets("entry", <MachineBlock step={1} label="Entrada da Demanda" kind="document" />)}</DraggableNode>
-          <DraggableNode id="register" layout={layout} onMove={moveNode} designMode={designMode}>{withSockets("register", <MachineBlock step={2} label="Cadastro" kind="terminal" />)}</DraggableNode>
-          <DraggableNode id="financial" layout={layout} onMove={moveNode} designMode={designMode}>{withSockets("financial", <MachineBlock step={3} label="Financeiro" kind="finance" />)}</DraggableNode>
-          <DraggableNode id="triage" layout={layout} onMove={moveNode} designMode={designMode}>{withSockets("triage", <MachineBlock step={4} label="Triagem" kind="triage" />)}</DraggableNode>
+          <div
+            className={`fd-world ${isPanning ? "fd-world-panning" : ""}`}
+            style={{
+              width: factoryWorld.width,
+              height: factoryWorld.height,
+              transform: `translate3d(${viewportPan.x}px, ${viewportPan.y}px, 0)`
+            }}
+            onPointerDown={onWorldPointerDown}
+            onPointerMove={onWorldPointerMove}
+            onPointerUp={onWorldPointerUp}
+            onPointerCancel={onWorldPointerCancel}
+            onKeyDown={onWorldKeyDown}
+          >
+            <div className="fd-floor" />
+            <ConveyorSvg layout={layout} sockets={sockets} />
 
-          <DraggableNode id="accounting" layout={layout} onMove={moveNode} designMode={designMode}>{withSockets("accounting", <DepartmentPanel step={5} title="Departamento Contábil" lanes={accountingLanes} className="fd-accounting" />)}</DraggableNode>
-          <DraggableNode id="people" layout={layout} onMove={moveNode} designMode={designMode}>{withSockets("people", <DepartmentPanel step={6} title="Departamento Pessoal" lanes={peopleLanes} className="fd-people" />)}</DraggableNode>
+            <DraggableNode id="entry" layout={layout} onMove={moveNode} designMode={designMode}>{withSockets("entry", <MachineBlock step={1} label="Entrada da Demanda" kind="document" />)}</DraggableNode>
+            <DraggableNode id="register" layout={layout} onMove={moveNode} designMode={designMode}>{withSockets("register", <MachineBlock step={2} label="Cadastro" kind="terminal" />)}</DraggableNode>
+            <DraggableNode id="financial" layout={layout} onMove={moveNode} designMode={designMode}>{withSockets("financial", <MachineBlock step={3} label="Financeiro" kind="finance" />)}</DraggableNode>
+            <DraggableNode id="triage" layout={layout} onMove={moveNode} designMode={designMode}>{withSockets("triage", <MachineBlock step={4} label="Triagem" kind="triage" />)}</DraggableNode>
 
-          <DraggableNode id="consolidation" layout={layout} onMove={moveNode} designMode={designMode}>{withSockets("consolidation", <ConsolidationMachine />)}</DraggableNode>
-          <DraggableNode id="delivery" layout={layout} onMove={moveNode} designMode={designMode}>{withSockets("delivery", <DeliveryBox />)}</DraggableNode>
-          <DraggableNode id="focus" layout={layout} onMove={moveNode} designMode={designMode}><FocusPanel /></DraggableNode>
+            <DraggableNode id="accounting" layout={layout} onMove={moveNode} designMode={designMode}>{withSockets("accounting", <DepartmentPanel step={5} title="Departamento Contábil" lanes={accountingLanes} className="fd-accounting" />)}</DraggableNode>
+            <DraggableNode id="people" layout={layout} onMove={moveNode} designMode={designMode}>{withSockets("people", <DepartmentPanel step={6} title="Departamento Pessoal" lanes={peopleLanes} className="fd-people" />)}</DraggableNode>
+
+            <DraggableNode id="consolidation" layout={layout} onMove={moveNode} designMode={designMode}>{withSockets("consolidation", <ConsolidationMachine />)}</DraggableNode>
+            <DraggableNode id="delivery" layout={layout} onMove={moveNode} designMode={designMode}>{withSockets("delivery", <DeliveryBox />)}</DraggableNode>
+            <DraggableNode id="focus" layout={layout} onMove={moveNode} designMode={designMode}><FocusPanel /></DraggableNode>
+          </div>
         </div>
       </section>
     </main>

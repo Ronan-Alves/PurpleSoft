@@ -111,11 +111,28 @@ type Office = {
   name: string;
 };
 
+type CustomerContact = {
+  id: string;
+  name: string;
+  role: string;
+  phone: string;
+  email: string;
+};
+
+type ServiceInterest = "contabil" | "pessoal" | "outro";
+
 type Customer = {
   id: string;
   officeId: string;
   legalName: string;
   cnpj: string;
+  tradeName?: string;
+  contractAddress?: string;
+  contractCityState?: string;
+  contractEmail?: string;
+  contacts?: CustomerContact[];
+  serviceInterests?: ServiceInterest[];
+  otherServiceDescription?: string;
 };
 
 type Demand = {
@@ -149,6 +166,61 @@ type Procedure = {
   text: string;
 };
 
+type ClientAccess = {
+  id: string;
+  customerId: string;
+  email: string;
+  password: string;
+  createdAt: string;
+};
+
+type ClientPending = {
+  id: string;
+  customerId: string;
+  title: string;
+  description: string;
+  status: "pendente" | "em_preenchimento" | "enviada";
+  createdAt: string;
+  formType: "contabil_onboarding";
+};
+
+type CustomerBasicRegistrationResponse = {
+  customer: Customer;
+  access: ClientAccess | null;
+  pending: ClientPending | null;
+};
+
+type ClientPendingsResponse = {
+  pendings: ClientPending[];
+};
+
+type AccountingClientCompany = {
+  id: string;
+  customerId: string;
+  pendingId: string;
+  companyName: string;
+  cnpj: string;
+  taxRegime: string;
+  spedEcdDelivery: string;
+  financialSystemReports: string;
+  onlyBankStatements: string;
+  banksUsed: string;
+  averageBankPages: string;
+  hasApplicationStatementsPdf: string;
+  accountingDelayed: string;
+  wantsAccountingRegularization: string;
+  closingFrequency: string;
+  systemUsed: string;
+  wantsSpedEcdEcf: string;
+  spedPeriod: string;
+  createdAt: string;
+  scopeSummary: string[];
+};
+
+type AccountingClientCompaniesResponse = {
+  companies: AccountingClientCompany[];
+};
+
 type OperationState = {
   offices: Office[];
   customers: Customer[];
@@ -156,6 +228,8 @@ type OperationState = {
   tasks: OperationTask[];
   procedures: Procedure[];
   stationSeconds: Record<string, number>;
+  clientAccesses: ClientAccess[];
+  clientPendings: ClientPending[];
 };
 
 type TaskTemplate = {
@@ -167,6 +241,7 @@ type TaskTemplate = {
 };
 
 const storageKey = "purplesoft_operation_state_v1";
+const clientSessionKey = "purplesoft_client_session_v1";
 const employees = ["Ana Souza", "Bruno Lima", "Camila Rocha", "Diego Martins", "Equipe Fiscal"];
 
 const departmentCatalog = {
@@ -215,9 +290,36 @@ const initialOperationState: OperationState = {
     { id: "office-2", name: "Martins & Rocha Consultoria" }
   ],
   customers: [
-    { id: "customer-1", officeId: "office-1", legalName: "Aurora Comercio de Alimentos Ltda", cnpj: "12.345.678/0001-90" },
-    { id: "customer-2", officeId: "office-1", legalName: "Prisma Tecnologia e Servicos Ltda", cnpj: "22.987.654/0001-10" },
-    { id: "customer-3", officeId: "office-2", legalName: "Horizonte Transportes Ltda", cnpj: "33.222.111/0001-44" }
+    {
+      id: "customer-1",
+      officeId: "office-1",
+      legalName: "Aurora Comercio de Alimentos Ltda",
+      cnpj: "12.345.678/0001-90",
+      tradeName: "Aurora Alimentos",
+      contractAddress: "Av. Central, 1200",
+      contractCityState: "Sao Paulo/SP",
+      contractEmail: "contratos@aurora.com.br",
+      contacts: [{ id: "contact-1", name: "Mariana Costa", role: "Financeiro", phone: "(11) 99999-1000", email: "mariana@aurora.com.br" }],
+      serviceInterests: ["contabil", "pessoal"]
+    },
+    {
+      id: "customer-2",
+      officeId: "office-1",
+      legalName: "Prisma Tecnologia e Servicos Ltda",
+      cnpj: "22.987.654/0001-10",
+      tradeName: "Prisma Tech",
+      contacts: [{ id: "contact-2", name: "Renato Alves", role: "Socio administrador", phone: "(11) 98888-2200", email: "renato@prisma.com.br" }],
+      serviceInterests: ["pessoal"]
+    },
+    {
+      id: "customer-3",
+      officeId: "office-2",
+      legalName: "Horizonte Transportes Ltda",
+      cnpj: "33.222.111/0001-44",
+      tradeName: "Horizonte",
+      contacts: [{ id: "contact-3", name: "Paula Martins", role: "Diretora", phone: "(21) 97777-3300", email: "paula@horizonte.com.br" }],
+      serviceInterests: ["contabil"]
+    }
   ],
   demands: [
     {
@@ -273,18 +375,76 @@ const initialOperationState: OperationState = {
     "contabil:conciliacao": 3600,
     "contabil:ajustes": 2800,
     "pessoal:folha": 2100
-  }
+  },
+  clientAccesses: [
+    { id: "access-1", customerId: "customer-1", email: "cliente.aurora@portal.purplesoft", password: "aurora123", createdAt: "2026-06-10" },
+    { id: "access-2", customerId: "customer-3", email: "cliente.horizonte@portal.purplesoft", password: "horizonte123", createdAt: "2026-06-10" }
+  ],
+  clientPendings: [
+    {
+      id: "pending-1",
+      customerId: "customer-1",
+      title: "Cadastro inicial para servico contabil",
+      description: "Preencha as informacoes iniciais para prepararmos o contrato e a implantacao contabil.",
+      status: "pendente",
+      createdAt: "2026-06-10",
+      formType: "contabil_onboarding"
+    },
+    {
+      id: "pending-2",
+      customerId: "customer-3",
+      title: "Cadastro inicial para servico contabil",
+      description: "Preencha as informacoes iniciais para prepararmos o contrato e a implantacao contabil.",
+      status: "pendente",
+      createdAt: "2026-06-10",
+      formType: "contabil_onboarding"
+    }
+  ]
 };
 
 function uniqueId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
 }
 
+function todayIso() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function portalSlug(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ".")
+    .replace(/(^\.|\.$)/g, "")
+    .slice(0, 32) || "cliente";
+}
+
+function generateClientPassword(customer: Customer) {
+  const digits = customer.cnpj.replace(/\D/g, "").slice(-4) || "0000";
+  return `${portalSlug(customer.tradeName || customer.legalName).replace(/\./g, "").slice(0, 8)}${digits}`;
+}
+
+function normalizeOperationState(state: OperationState): OperationState {
+  return {
+    ...initialOperationState,
+    ...state,
+    offices: state.offices ?? [],
+    customers: state.customers ?? [],
+    demands: state.demands ?? [],
+    tasks: state.tasks ?? [],
+    procedures: state.procedures ?? [],
+    stationSeconds: state.stationSeconds ?? {},
+    clientAccesses: state.clientAccesses ?? [],
+    clientPendings: state.clientPendings ?? []
+  };
+}
+
 function loadOperationState(): OperationState {
   const stored = localStorage.getItem(storageKey);
   if (!stored) return initialOperationState;
   try {
-    return JSON.parse(stored) as OperationState;
+    return normalizeOperationState(JSON.parse(stored) as OperationState);
   } catch {
     return initialOperationState;
   }
@@ -760,7 +920,9 @@ function EntranceArea({ store }: { store: ReturnType<typeof useOperationState> }
         id: uniqueId("customer"),
         officeId: office.id,
         legalName: form.customerLegalName,
-        cnpj: form.cnpj
+        cnpj: form.cnpj,
+        contacts: [],
+        serviceInterests: []
       };
       const demand: Demand = {
         id: uniqueId("demand"),
@@ -805,39 +967,200 @@ function EntranceArea({ store }: { store: ReturnType<typeof useOperationState> }
 
 function RegistrationArea({ store }: { store: ReturnType<typeof useOperationState> }) {
   const { state, commit } = store;
-  const [form, setForm] = useState({ officeName: "Contabilidade Delta", legalName: "Delta Moveis Planejados Ltda", cnpj: "55.333.222/0001-88" });
+  const [lastAccess, setLastAccess] = useState<ClientAccess | null>(null);
+  const [form, setForm] = useState({
+    officeName: "Contabilidade Delta",
+    legalName: "Delta Moveis Planejados Ltda",
+    tradeName: "Delta Moveis",
+    cnpj: "55.333.222/0001-88",
+    contractAddress: "Rua das Industrias, 450",
+    contractCityState: "Campinas/SP",
+    contractEmail: "contratos@deltamoveis.com.br",
+    serviceInterests: ["contabil", "pessoal"] as ServiceInterest[],
+    otherServiceDescription: ""
+  });
+  const [contacts, setContacts] = useState<CustomerContact[]>([
+    { id: uniqueId("contact"), name: "Fernanda Lima", role: "Responsavel financeiro", phone: "(19) 99999-4400", email: "fernanda@deltamoveis.com.br" }
+  ]);
 
-  function submit(event: React.FormEvent) {
+  function updateContact(contactId: string, field: keyof Omit<CustomerContact, "id">, value: string) {
+    setContacts((current) => current.map((contact) => contact.id === contactId ? { ...contact, [field]: value } : contact));
+  }
+
+  function addContact() {
+    setContacts((current) => [...current, { id: uniqueId("contact"), name: "", role: "", phone: "", email: "" }]);
+  }
+
+  function removeContact(contactId: string) {
+    setContacts((current) => current.length === 1 ? current : current.filter((contact) => contact.id !== contactId));
+  }
+
+  function toggleServiceInterest(interest: ServiceInterest) {
+    setForm((current) => ({
+      ...current,
+      serviceInterests: current.serviceInterests.includes(interest)
+        ? current.serviceInterests.filter((item) => item !== interest)
+        : [...current.serviceInterests, interest]
+    }));
+  }
+
+  async function submit(event: React.FormEvent) {
     event.preventDefault();
+    let generatedAccess: ClientAccess | null = null;
+    let apiRegistration: CustomerBasicRegistrationResponse | null = null;
+    const cleanContacts = contacts.filter((contact) => contact.name || contact.role || contact.phone || contact.email);
+
+    try {
+      const response = await fetch(`${API_URL}/customers/basic-registration`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...form,
+          contacts: cleanContacts
+        })
+      });
+      if (!response.ok) throw new Error("Falha ao salvar cadastro no banco");
+      apiRegistration = await response.json() as CustomerBasicRegistrationResponse;
+      generatedAccess = apiRegistration.access;
+    } catch (error) {
+      console.error(error);
+    }
+
     commit((current) => {
-      const office = current.offices.find((item) => item.name === form.officeName) ?? { id: uniqueId("office"), name: form.officeName };
-      const customer = { id: uniqueId("customer"), officeId: office.id, legalName: form.legalName, cnpj: form.cnpj };
+      const office = apiRegistration
+        ? { id: apiRegistration.customer.officeId, name: form.officeName }
+        : current.offices.find((item) => item.name === form.officeName) ?? { id: uniqueId("office"), name: form.officeName };
+      const existingCustomer = current.customers.find((item) => item.cnpj === form.cnpj);
+      const customer: Customer = apiRegistration?.customer ?? {
+          ...(existingCustomer ?? { id: uniqueId("customer") }),
+          officeId: office.id,
+          legalName: form.legalName,
+          tradeName: form.tradeName,
+          cnpj: form.cnpj,
+          contractAddress: form.contractAddress,
+          contractCityState: form.contractCityState,
+          contractEmail: form.contractEmail,
+          contacts: cleanContacts,
+          serviceInterests: form.serviceInterests,
+          otherServiceDescription: form.otherServiceDescription
+        };
+      const wantsAccounting = form.serviceInterests.includes("contabil");
+      const existingAccess = current.clientAccesses.find((item) => item.customerId === customer.id);
+      const clientEmail = customer.contacts?.find((contact) => contact.email)?.email || customer.contractEmail || `${portalSlug(customer.tradeName || customer.legalName)}@portal.purplesoft`;
+      const clientAccess = apiRegistration?.access ?? (wantsAccounting
+        ? existingAccess ?? {
+            id: uniqueId("access"),
+            customerId: customer.id,
+            email: clientEmail,
+            password: generateClientPassword(customer),
+            createdAt: todayIso()
+          }
+        : null);
+      const hasAccountingPending = current.clientPendings.some((pending) => pending.customerId === customer.id && pending.formType === "contabil_onboarding");
+      const accountingPending: ClientPending | null = apiRegistration?.pending ?? (wantsAccounting && !hasAccountingPending
+        ? {
+            id: uniqueId("pending"),
+            customerId: customer.id,
+            title: "Cadastro inicial para servico contabil",
+            description: "Preencha as informacoes iniciais para prepararmos o contrato e a implantacao contabil.",
+            status: "pendente",
+            createdAt: todayIso(),
+            formType: "contabil_onboarding"
+          }
+        : null);
+      generatedAccess = generatedAccess ?? clientAccess;
       return {
         ...current,
         offices: current.offices.some((item) => item.id === office.id) ? current.offices : [...current.offices, office],
-        customers: current.customers.some((item) => item.cnpj === form.cnpj) ? current.customers : [...current.customers, customer]
+        customers: current.customers.some((item) => item.cnpj === form.cnpj)
+          ? current.customers.map((item) => item.cnpj === form.cnpj ? customer : item)
+          : [...current.customers, customer],
+        clientAccesses: clientAccess
+          ? [clientAccess, ...current.clientAccesses.filter((item) => item.customerId !== customer.id)]
+          : current.clientAccesses,
+        clientPendings: accountingPending
+          ? [accountingPending, ...current.clientPendings.filter((item) => item.id !== accountingPending.id)]
+          : current.clientPendings
       };
     });
+    setLastAccess(generatedAccess);
   }
 
   return (
-    <AreaFrame title="Cadastro" subtitle="Centraliza o cadastro de escritorios e clientes atendidos, antes ou durante a entrada de demandas." icon={<Building2 />}>
+    <AreaFrame title="Cadastro Basico" subtitle="Registra os dados do cliente para contrato, contatos principais e interesse inicial de servicos." icon={<Building2 />}>
       <section className="ops-grid">
         <form className="ops-panel form-grid" onSubmit={submit}>
-          <h3>Novo cliente</h3>
+          <h3>Dados para contrato</h3>
           <label>Escritorio<input value={form.officeName} onChange={(event) => setForm({ ...form, officeName: event.target.value })} /></label>
           <label>Razao social<input value={form.legalName} onChange={(event) => setForm({ ...form, legalName: event.target.value })} /></label>
+          <label>Nome fantasia<input value={form.tradeName} onChange={(event) => setForm({ ...form, tradeName: event.target.value })} /></label>
           <label>CNPJ<input value={form.cnpj} onChange={(event) => setForm({ ...form, cnpj: event.target.value })} /></label>
-          <button type="submit"><Save size={18} /> Salvar cadastro</button>
+          <label className="wide">Endereco para contrato<input value={form.contractAddress} onChange={(event) => setForm({ ...form, contractAddress: event.target.value })} /></label>
+          <label>Cidade/UF<input value={form.contractCityState} onChange={(event) => setForm({ ...form, contractCityState: event.target.value })} /></label>
+          <label>Email para contrato<input value={form.contractEmail} onChange={(event) => setForm({ ...form, contractEmail: event.target.value })} /></label>
+
+          <h3 className="wide">Contatos</h3>
+          <div className="wide contact-list">
+            {contacts.map((contact, index) => (
+              <article className="contact-editor" key={contact.id}>
+                <strong>Contato {index + 1}</strong>
+                <label>Nome<input value={contact.name} onChange={(event) => updateContact(contact.id, "name", event.target.value)} /></label>
+                <label>Quem e na empresa<input value={contact.role} onChange={(event) => updateContact(contact.id, "role", event.target.value)} /></label>
+                <label>Telefone<input value={contact.phone} onChange={(event) => updateContact(contact.id, "phone", event.target.value)} /></label>
+                <label>Email<input value={contact.email} onChange={(event) => updateContact(contact.id, "email", event.target.value)} /></label>
+                {contacts.length > 1 && <button className="secondary-button" type="button" onClick={() => removeContact(contact.id)}>Remover contato</button>}
+              </article>
+            ))}
+          </div>
+          <button className="secondary-button" type="button" onClick={addContact}><Plus size={18} /> Adicionar contato</button>
+
+          <h3 className="wide">Situacao base</h3>
+          <div className="wide checklist service-checklist">
+            {[
+              ["contabil", "Interesse em servico contabil"],
+              ["pessoal", "Interesse em departamento pessoal"],
+              ["outro", "Interesse em outro servico"]
+            ].map(([interest, label]) => (
+              <label key={interest}>
+                <input type="checkbox" checked={form.serviceInterests.includes(interest as ServiceInterest)} onChange={() => toggleServiceInterest(interest as ServiceInterest)} />
+                <span>{label}</span>
+              </label>
+            ))}
+          </div>
+          {form.serviceInterests.includes("outro") && (
+            <label className="wide">Qual outro servico?<input value={form.otherServiceDescription} onChange={(event) => setForm({ ...form, otherServiceDescription: event.target.value })} /></label>
+          )}
+
+          <button type="submit"><Save size={18} /> Salvar cadastro basico</button>
         </form>
         <section className="ops-panel">
           <h3>Clientes cadastrados</h3>
+          {lastAccess && (
+            <article className="client-access-card">
+              <strong>Acesso do cliente criado</strong>
+              <span>Login: {lastAccess.email}</span>
+              <span>Senha: {lastAccess.password}</span>
+              <small>Encaminhe estes dados para o cliente acessar /cliente/login.</small>
+            </article>
+          )}
           <div className="table-list">
             {state.customers.map((customer) => (
               <article key={customer.id}>
-                <strong>{customer.legalName}</strong>
-                <span>{customer.cnpj}</span>
-                <small>{officeName(state, customer.officeId)}</small>
+                {(() => {
+                  const access = state.clientAccesses.find((item) => item.customerId === customer.id);
+                  const pendingCount = state.clientPendings.filter((item) => item.customerId === customer.id && item.status !== "enviada").length;
+                  return (
+                    <>
+                      <strong>{customer.legalName}</strong>
+                      <span>{customer.tradeName ? `${customer.tradeName} · ` : ""}{customer.cnpj}</span>
+                      <small>{officeName(state, customer.officeId)}</small>
+                      <small>Interesses: {(customer.serviceInterests ?? []).join(", ") || "nao definidos"}</small>
+                      <small>Contatos: {(customer.contacts ?? []).length || 0}</small>
+                      {access && <small>Portal: {access.email} · senha {access.password}</small>}
+                      {pendingCount > 0 && <small>Pendencias do cliente: {pendingCount}</small>}
+                    </>
+                  );
+                })()}
               </article>
             ))}
           </div>
@@ -1156,6 +1479,277 @@ function PlaceholderPage({ title }: { title: string }) {
   );
 }
 
+function getClientSession() {
+  const stored = localStorage.getItem(clientSessionKey);
+  if (!stored) return null;
+  try {
+    return JSON.parse(stored) as { customerId: string; customerName?: string };
+  } catch {
+    return null;
+  }
+}
+
+function ClientLoginPage() {
+  const navigate = useNavigate();
+  const store = useOperationState();
+  const { state } = store;
+  const [email, setEmail] = useState(state.clientAccesses[0]?.email ?? "");
+  const [password, setPassword] = useState(state.clientAccesses[0]?.password ?? "");
+  const [error, setError] = useState("");
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    setError("");
+    try {
+      const response = await fetch(`${API_URL}/client/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password })
+      });
+      if (!response.ok) throw new Error("Login ou senha invalidos.");
+      const body = await response.json() as { customerId: string; customerName: string };
+      localStorage.setItem(clientSessionKey, JSON.stringify({ customerId: body.customerId, customerName: body.customerName }));
+      navigate("/cliente/pendencias");
+    } catch {
+      const access = state.clientAccesses.find((item) => item.email === email && item.password === password);
+      if (!access) {
+        setError("Login ou senha invalidos.");
+        return;
+      }
+      const customer = state.customers.find((item) => item.id === access.customerId);
+      localStorage.setItem(clientSessionKey, JSON.stringify({ customerId: access.customerId, customerName: customer?.legalName }));
+      navigate("/cliente/pendencias");
+    }
+  }
+
+  return (
+    <main className="client-login-page">
+      <section className="client-login-panel">
+        <div className="brand-mark"><Building2 size={30} /></div>
+        <p className="eyebrow">Portal do Cliente</p>
+        <h1>Acesse suas pendencias</h1>
+        <p>Entre com o login e senha encaminhados pelo escritorio para preencher informacoes solicitadas.</p>
+        <form onSubmit={submit}>
+          <label>Email<input value={email} onChange={(event) => setEmail(event.target.value)} /></label>
+          <label>Senha<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} /></label>
+          {error && <span className="form-error">{error}</span>}
+          <button type="submit"><Lock size={18} /> Entrar</button>
+        </form>
+      </section>
+    </main>
+  );
+}
+
+function ClientPrivateRoute({ children }: { children: React.ReactNode }) {
+  return getClientSession() ? children : <Navigate to="/cliente/login" replace />;
+}
+
+function ClientShell({ children }: { children: React.ReactNode }) {
+  const navigate = useNavigate();
+  const store = useOperationState();
+  const session = getClientSession();
+  const customer = store.state.customers.find((item) => item.id === session?.customerId);
+
+  function logout() {
+    localStorage.removeItem(clientSessionKey);
+    navigate("/cliente/login");
+  }
+
+  return (
+    <main className="client-portal">
+      <header className="client-topbar">
+        <div>
+          <p className="eyebrow">Portal do Cliente</p>
+          <h1>{customer?.tradeName || customer?.legalName || session?.customerName || "Cliente"}</h1>
+        </div>
+        <button type="button" onClick={logout}><LogOut size={18} /> Sair</button>
+      </header>
+      {children}
+    </main>
+  );
+}
+
+function ClientPendingListPage() {
+  const store = useOperationState();
+  const session = getClientSession();
+  const customerId = session?.customerId ?? "";
+  const [apiPendings, setApiPendings] = useState<ClientPending[] | null>(null);
+  const pendings = apiPendings ?? store.state.clientPendings.filter((pending) => pending.customerId === customerId);
+
+  useEffect(() => {
+    if (!customerId) return;
+    fetch(`${API_URL}/client/pendings?customer_id=${encodeURIComponent(customerId)}`)
+      .then((response) => {
+        if (!response.ok) throw new Error("Falha ao carregar pendencias");
+        return response.json() as Promise<ClientPendingsResponse>;
+      })
+      .then((body) => setApiPendings(body.pendings))
+      .catch(() => setApiPendings(null));
+  }, [customerId]);
+
+  return (
+    <ClientShell>
+      <section className="client-panel">
+        <h2>Pendencias</h2>
+        <div className="client-pending-list">
+          {pendings.map((pending) => (
+            <Link to={`/cliente/pendencias/${pending.id}`} key={pending.id}>
+              <strong>{pending.title}</strong>
+              <span>{pending.description}</span>
+              <small>{pending.status} · criada em {pending.createdAt}</small>
+            </Link>
+          ))}
+          {pendings.length === 0 && <p className="empty-state">Nenhuma pendencia aberta no momento.</p>}
+        </div>
+      </section>
+    </ClientShell>
+  );
+}
+
+function ClientPendingFormPage() {
+  const { pendingId } = useParams();
+  const store = useOperationState();
+  const navigate = useNavigate();
+  const session = getClientSession();
+  const [apiPendings, setApiPendings] = useState<ClientPending[] | null>(null);
+  const [companies, setCompanies] = useState<AccountingClientCompany[]>([]);
+  const [sentMessage, setSentMessage] = useState("");
+  const emptyAccountingForm = {
+    companyName: "",
+    cnpj: "",
+    taxRegime: "",
+    spedEcdDelivery: "",
+    financialSystemReports: "",
+    onlyBankStatements: "",
+    banksUsed: "",
+    averageBankPages: "",
+    hasApplicationStatementsPdf: "",
+    accountingDelayed: "",
+    wantsAccountingRegularization: "",
+    closingFrequency: "",
+    systemUsed: "",
+    wantsSpedEcdEcf: "",
+    spedPeriod: ""
+  };
+  const [form, setForm] = useState(emptyAccountingForm);
+  const pending = (apiPendings ?? store.state.clientPendings).find((item) => item.id === pendingId && item.customerId === session?.customerId);
+
+  useEffect(() => {
+    if (!session?.customerId) return;
+    fetch(`${API_URL}/client/pendings?customer_id=${encodeURIComponent(session.customerId)}`)
+      .then((response) => {
+        if (!response.ok) throw new Error("Falha ao carregar pendencia");
+        return response.json() as Promise<ClientPendingsResponse>;
+      })
+      .then((body) => setApiPendings(body.pendings))
+      .catch(() => setApiPendings(null));
+  }, [session?.customerId]);
+
+  function loadCompanies() {
+    if (!session?.customerId || !pendingId) return;
+    fetch(`${API_URL}/client/accounting-companies?customer_id=${encodeURIComponent(session.customerId)}&pending_id=${encodeURIComponent(pendingId)}`)
+      .then((response) => {
+        if (!response.ok) throw new Error("Falha ao carregar empresas");
+        return response.json() as Promise<AccountingClientCompaniesResponse>;
+      })
+      .then((body) => setCompanies(body.companies))
+      .catch(() => setCompanies([]));
+  }
+
+  useEffect(() => {
+    loadCompanies();
+  }, [session?.customerId, pendingId]);
+
+  async function submitCompany(event: React.FormEvent) {
+    event.preventDefault();
+    if (!session?.customerId || !pendingId) return;
+    setSentMessage("");
+    const response = await fetch(`${API_URL}/client/accounting-companies`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        customerId: session.customerId,
+        pendingId,
+        ...form
+      })
+    });
+    if (!response.ok) {
+      setSentMessage("Nao foi possivel salvar esta empresa. Confira os dados e tente novamente.");
+      return;
+    }
+    const company = await response.json() as AccountingClientCompany;
+    setCompanies((current) => [company, ...current]);
+    setForm(emptyAccountingForm);
+    setSentMessage("Empresa cadastrada. Voce pode incluir outra empresa se necessario.");
+  }
+
+  if (!pending) {
+    return (
+      <ClientShell>
+        <section className="client-panel">
+          <h2>Pendencia nao localizada</h2>
+          <button type="button" onClick={() => navigate("/cliente/pendencias")}><ArrowLeft size={18} /> Voltar</button>
+        </section>
+      </ClientShell>
+    );
+  }
+
+  return (
+    <ClientShell>
+      <section className="client-panel client-accounting-form">
+        <Link className="back-button" to="/cliente/pendencias"><ArrowLeft size={18} /> Voltar</Link>
+        <h2>{pending.title}</h2>
+        <p>Inclua uma empresa por CNPJ. Depois desta etapa, a equipe podera visualizar o que sera feito para cada empresa cadastrada.</p>
+        <section className="client-company-list">
+          <h3>Empresas cadastradas</h3>
+          {companies.map((company) => (
+            <article key={company.id}>
+              <div>
+                <strong>{company.companyName}</strong>
+                <span>{company.cnpj} · {company.taxRegime || "regime nao informado"}</span>
+              </div>
+              <ul>
+                {company.scopeSummary.map((scope) => <li key={scope}>{scope}</li>)}
+              </ul>
+            </article>
+          ))}
+          {companies.length === 0 && <p className="empty-state">Nenhuma empresa cadastrada nesta pendencia ainda.</p>}
+        </section>
+        <form
+          className="client-form-grid"
+          onSubmit={submitCompany}
+        >
+          <h3>Adicionar empresa</h3>
+          <label>Nome da empresa<input value={form.companyName} onChange={(event) => setForm({ ...form, companyName: event.target.value })} /></label>
+          <label>CNPJ<input value={form.cnpj} onChange={(event) => setForm({ ...form, cnpj: event.target.value })} /></label>
+          <label>Regime tributario<select value={form.taxRegime} onChange={(event) => setForm({ ...form, taxRegime: event.target.value })}><option value="">Selecione</option><option>Simples Nacional</option><option>Lucro Presumido</option><option>Lucro Real</option><option>MEI</option><option>Nao sei informar</option></select></label>
+          <label>Entrega do SPED ECD<select value={form.spedEcdDelivery} onChange={(event) => setForm({ ...form, spedEcdDelivery: event.target.value })}><option value="">Selecione</option><option>Sim</option><option>Nao</option><option>Nao sei informar</option></select></label>
+
+          <h3>Banco e sistema financeiro</h3>
+          <label>Possui sistema financeiro para geracao de relatorios que auxiliam a contabilidade?<select value={form.financialSystemReports} onChange={(event) => setForm({ ...form, financialSystemReports: event.target.value })}><option value="">Selecione</option><option>Sim</option><option>Nao</option><option>Em implantacao</option></select></label>
+          <label>Utiliza apenas extratos bancarios?<select value={form.onlyBankStatements} onChange={(event) => setForm({ ...form, onlyBankStatements: event.target.value })}><option value="">Selecione</option><option>Sim</option><option>Nao</option><option>Parcialmente</option></select></label>
+          <label className="wide">Quais bancos a empresa possui?<input value={form.banksUsed} onChange={(event) => setForm({ ...form, banksUsed: event.target.value })} placeholder="Ex.: Itau, Bradesco, Santander" /></label>
+          <label>Media de paginas de cada banco por mes<input value={form.averageBankPages} onChange={(event) => setForm({ ...form, averageBankPages: event.target.value })} placeholder="Ex.: 20 paginas por banco" /></label>
+          <label>Possui extratos de aplicacao/CC/EM PDF?<select value={form.hasApplicationStatementsPdf} onChange={(event) => setForm({ ...form, hasApplicationStatementsPdf: event.target.value })}><option value="">Selecione</option><option>Sim</option><option>Nao</option><option>Nao sei informar</option></select></label>
+          <label className="wide">Qual sistema utilizado?<input value={form.systemUsed} onChange={(event) => setForm({ ...form, systemUsed: event.target.value })} placeholder="Ex.: Omie, Conta Azul, Bling, sistema proprio" /></label>
+
+          <h3>Situacao contabil</h3>
+          <label>Esta com contabilidade em atraso?<select value={form.accountingDelayed} onChange={(event) => setForm({ ...form, accountingDelayed: event.target.value })}><option value="">Selecione</option><option>Sim</option><option>Nao</option><option>Nao sei informar</option></select></label>
+          <label>Deseja regularizar a contabilidade?<select value={form.wantsAccountingRegularization} onChange={(event) => setForm({ ...form, wantsAccountingRegularization: event.target.value })}><option value="">Selecione</option><option>Sim</option><option>Nao</option><option>A avaliar</option></select></label>
+          <label className="wide">Fechamento contabil sera feito como?<select value={form.closingFrequency} onChange={(event) => setForm({ ...form, closingFrequency: event.target.value })}><option value="">Selecione</option><option>Mensalmente</option><option>Por demanda</option><option>Outro</option></select></label>
+
+          <h3>SPED ECD/ECF</h3>
+          <label>Quer que entregue SPED ECD e ECF?<select value={form.wantsSpedEcdEcf} onChange={(event) => setForm({ ...form, wantsSpedEcdEcf: event.target.value })}><option value="">Selecione</option><option>Sim</option><option>Nao</option><option>Apenas ECD</option><option>Apenas ECF</option><option>A avaliar</option></select></label>
+          <label>Qual periodo?<input value={form.spedPeriod} onChange={(event) => setForm({ ...form, spedPeriod: event.target.value })} placeholder="Ex.: 2024, 2025, desde jan/2026" /></label>
+
+          <button type="submit"><FileText size={18} /> Salvar empresa</button>
+          {sentMessage && <span className="client-form-message">{sentMessage}</span>}
+        </form>
+      </section>
+    </ClientShell>
+  );
+}
+
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   return isLoggedIn() ? children : <Navigate to="/login" replace />;
 }
@@ -1165,6 +1759,9 @@ function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/cliente/login" element={<ClientLoginPage />} />
+        <Route path="/cliente/pendencias" element={<ClientPrivateRoute><ClientPendingListPage /></ClientPrivateRoute>} />
+        <Route path="/cliente/pendencias/:pendingId" element={<ClientPrivateRoute><ClientPendingFormPage /></ClientPrivateRoute>} />
         <Route path="/" element={<PrivateRoute><FactoryDashboard /></PrivateRoute>} />
         <Route path="/operation" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
         <Route path="/area/:areaId" element={<PrivateRoute><AreaPage /></PrivateRoute>} />

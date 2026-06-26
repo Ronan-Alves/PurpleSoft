@@ -18,6 +18,7 @@ Estrutura principal:
 - Frontend: React, TypeScript, Vite, React Router e lucide-react.
 - Backend: FastAPI, SQLAlchemy e Pydantic.
 - Banco: PostgreSQL 16.
+- Migrations: Alembic.
 - Containers: Docker Compose.
 
 ## Como Rodar Com Docker
@@ -27,6 +28,12 @@ Na raiz do projeto:
 ```bash
 cd /Users/ronanalves/PlusTech/PurpleBPO/PurpleSoft
 docker compose up --build
+```
+
+O container do backend executa as migrations automaticamente com:
+
+```bash
+alembic upgrade head
 ```
 
 Depois de subir:
@@ -68,6 +75,7 @@ cd /Users/ronanalves/PlusTech/PurpleBPO/PurpleSoft/backend
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+alembic upgrade head
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
@@ -156,6 +164,75 @@ String usada pelo backend dentro do Docker:
 postgresql+psycopg://purplesoft:purplesoft@postgres:5432/purplesoft
 ```
 
+## Como Conectar Pelo DBeaver
+
+Com o Docker rodando, crie uma nova conexao PostgreSQL no DBeaver usando:
+
+```text
+Host: localhost
+Porta: 5438
+Database: purplesoft
+Usuario: purplesoft
+Senha: purplesoft
+```
+
+URL JDBC equivalente:
+
+```text
+jdbc:postgresql://localhost:5438/purplesoft
+```
+
+Passos no DBeaver:
+
+1. Clique em `Nova conexao`.
+2. Escolha `PostgreSQL`.
+3. Preencha `Host`, `Port`, `Database`, `Username` e `Password` com os dados acima.
+4. Clique em `Test Connection`.
+5. Se o DBeaver pedir para baixar o driver PostgreSQL, aceite.
+
+Se nao conectar, confirme que o container do banco esta rodando:
+
+```bash
+docker compose ps
+```
+
+O servico `postgres` deve aparecer como `healthy`.
+
+## Migrations Do Banco
+
+As migrations ficam em:
+
+```text
+backend/migrations
+```
+
+Arquivo principal:
+
+```text
+backend/migrations/versions/20260623_0001_initial_schema.py
+```
+
+Para aplicar migrations com Docker:
+
+```bash
+docker compose run --rm backend alembic upgrade head
+```
+
+Para ver a migration atual:
+
+```bash
+docker compose run --rm backend alembic current
+```
+
+Para criar uma nova migration depois de alterar modelos:
+
+```bash
+cd /Users/ronanalves/PlusTech/PurpleBPO/PurpleSoft/backend
+alembic revision --autogenerate -m "descricao da mudanca"
+```
+
+Depois revise o arquivo gerado em `backend/migrations/versions/` antes de aplicar.
+
 ## Como Conectar no Banco Pelo Terminal
 
 Com o Docker rodando, pela propria stack:
@@ -176,10 +253,50 @@ Comandos uteis dentro do `psql`:
 \dt
 select * from work_areas;
 select * from tasks;
+select * from alembic_version;
 \q
 ```
 
 ## Tabelas Criadas no MVP
+
+### `offices`
+
+Guarda escritorios atendidos pelo BPO.
+
+### `customers`
+
+Guarda o cadastro basico do cliente para contrato.
+
+Campos importantes:
+
+- `office_id`: escritorio associado.
+- `legal_name`: razao social.
+- `cnpj`: CNPJ.
+- `trade_name`: nome fantasia.
+- `contract_address`: endereco para contrato.
+- `contract_city_state`: cidade/UF.
+- `contract_email`: email usado para contrato.
+- `other_service_description`: descricao quando houver interesse em outro servico.
+
+### `customer_contacts`
+
+Guarda contatos do cliente.
+
+Campos importantes:
+
+- `customer_id`: cliente associado.
+- `name`: nome do contato.
+- `role`: quem a pessoa e na empresa.
+- `phone`: telefone.
+- `email`: email.
+
+### `customer_service_interests`
+
+Guarda os interesses base do cliente:
+
+- `contabil`
+- `pessoal`
+- `outro`
 
 ### `work_areas`
 
@@ -206,6 +323,18 @@ Campos importantes:
 - `client_name`: cliente/escritorio associado.
 - `status`: estado da tarefa.
 - `area_id`: area atual da tarefa.
+
+### `demands`
+
+Guarda demandas recebidas para clientes.
+
+### `procedures`
+
+Guarda procedimentos operacionais por estacao.
+
+### `station_times`
+
+Guarda tempo acumulado por estacao de trabalho.
 
 ## Seed Inicial
 

@@ -37,3 +37,101 @@ class OperationMap(BaseModel):
     areas: list[WorkAreaOut]
     tasks: list[TaskOut]
     summary: dict[str, int | float]
+
+
+class CustomerContactIn(BaseModel):
+    id: str | None = None
+    name: str
+    role: str
+    phone: str
+    email: str
+
+
+class CustomerBasicRegistrationIn(BaseModel):
+    officeName: str
+    legalName: str
+    tradeName: str | None = None
+    cnpj: str
+    contractAddress: str | None = None
+    contractCityState: str | None = None
+    contractEmail: str | None = None
+    contacts: list[CustomerContactIn] = []
+    serviceInterests: list[str] = []
+    otherServiceDescription: str | None = None
+
+
+class CustomerOut(BaseModel):
+    id: str
+    officeId: str
+    legalName: str
+    tradeName: str | None = None
+    cnpj: str
+    contractAddress: str | None = None
+    contractCityState: str | None = None
+    contractEmail: str | None = None
+    contacts: list[CustomerContactIn] = []
+    serviceInterests: list[str] = []
+    otherServiceDescription: str | None = None
+
+
+class ClientAccessOut(BaseModel):
+    id: str
+    customerId: str
+    email: str
+    password: str
+    createdAt: str
+
+
+class ClientPendingOut(BaseModel):
+    id: str
+    customerId: str
+    title: str
+    description: str
+    status: str
+    createdAt: str
+    formType: str
+
+
+class CustomerBasicRegistrationOut(BaseModel):
+    customer: CustomerOut
+    access: ClientAccessOut | None = None
+    pending: ClientPendingOut | None = None
+
+
+class ClientLoginOut(BaseModel):
+    customerId: str
+    customerName: str
+
+
+class ClientPendingsOut(BaseModel):
+    pendings: list[ClientPendingOut]
+
+
+class AccountingClientCompanyIn(BaseModel):
+    customerId: str
+    pendingId: str
+    companyName: str
+    cnpj: str
+    taxRegime: str
+    spedEcdDelivery: str
+    financialSystemReports: str
+    onlyBankStatements: str
+    banksUsed: str
+    averageBankPages: str
+    hasApplicationStatementsPdf: str
+    accountingDelayed: str
+    wantsAccountingRegularization: str
+    closingFrequency: str
+    systemUsed: str
+    wantsSpedEcdEcf: str
+    spedPeriod: str
+
+
+class AccountingClientCompanyOut(AccountingClientCompanyIn):
+    id: str
+    createdAt: str
+    scopeSummary: list[str]
+
+
+class AccountingClientCompaniesOut(BaseModel):
+    companies: list[AccountingClientCompanyOut]

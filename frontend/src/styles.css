@@ -1023,6 +1023,21 @@ a {
   background: #fff;
 }
 
+.client-access-card {
+  display: grid;
+  gap: 7px;
+  margin-bottom: 14px;
+  border: 1px solid #b8e2c7;
+  border-radius: 8px;
+  padding: 12px;
+  background: #ecfff3;
+  color: #174b2e;
+}
+
+.client-access-card span {
+  font-weight: 800;
+}
+
 .ops-panel h3 {
   margin: 0 0 14px;
   font-size: 1rem;
@@ -1085,6 +1100,13 @@ a {
   cursor: pointer;
 }
 
+.form-grid button.secondary-button,
+.ops-panel button.secondary-button {
+  border: 1px solid #cfdce9;
+  background: #f5f9fd;
+  color: #263a55;
+}
+
 .task-actions button:disabled {
   cursor: not-allowed;
   opacity: 0.45;
@@ -1136,6 +1158,272 @@ a {
 .checklist small {
   grid-column: 2;
   color: #6b7b90;
+}
+
+.contact-list {
+  display: grid;
+  gap: 10px;
+}
+
+.contact-editor {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  border: 1px solid #dce6f0;
+  border-radius: 8px;
+  padding: 12px;
+  background: #fbfdff;
+}
+
+.contact-editor strong,
+.contact-editor button {
+  grid-column: 1 / -1;
+}
+
+.service-checklist {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.client-login-page {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 20% 20%, rgb(35 108 209 / 14%), transparent 28%),
+    linear-gradient(180deg, #eef4fb, #dce9f6);
+}
+
+.client-login-panel {
+  display: grid;
+  gap: 16px;
+  width: min(460px, 100%);
+  border: 1px solid #d8e4f0;
+  border-radius: 10px;
+  padding: 30px;
+  background: #fff;
+  box-shadow: 0 24px 60px rgb(31 54 82 / 18%);
+}
+
+.client-login-panel h1,
+.client-login-panel p {
+  margin: 0;
+}
+
+.client-login-panel form {
+  display: grid;
+  gap: 12px;
+}
+
+.client-login-panel label {
+  display: grid;
+  gap: 7px;
+  color: #41536d;
+  font-size: 0.84rem;
+  font-weight: 800;
+}
+
+.client-login-panel input {
+  border: 1px solid #cfdce9;
+  border-radius: 8px;
+  padding: 12px;
+  background: #fbfdff;
+}
+
+.client-login-panel button,
+.client-topbar button,
+.client-panel button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 42px;
+  border: 0;
+  border-radius: 8px;
+  padding: 0 16px;
+  background: #236cd1;
+  color: #fff;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.client-portal {
+  min-height: 100vh;
+  padding: 22px;
+  background: #eef4fb;
+}
+
+.client-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 0 auto 18px;
+  max-width: 1040px;
+}
+
+.client-topbar h1,
+.client-topbar p {
+  margin: 0;
+}
+
+.client-panel {
+  display: grid;
+  gap: 14px;
+  max-width: 1040px;
+  margin: 0 auto;
+  border: 1px solid #d9e4f1;
+  border-radius: 10px;
+  padding: 20px;
+  background: #fff;
+  box-shadow: 0 16px 38px rgb(31 54 82 / 10%);
+}
+
+.client-panel h2,
+.client-panel p {
+  margin: 0;
+}
+
+.client-pending-list {
+  display: grid;
+  gap: 10px;
+}
+
+.client-pending-list a {
+  display: grid;
+  gap: 6px;
+  border: 1px solid #e1eaf3;
+  border-radius: 8px;
+  padding: 14px;
+  background: #fbfdff;
+  color: #1f2d44;
+  text-decoration: none;
+}
+
+.client-pending-list span,
+.client-pending-list small,
+.client-form-box span {
+  color: #63738a;
+}
+
+.client-form-placeholder {
+  align-content: start;
+}
+
+.client-accounting-form {
+  align-content: start;
+}
+
+.client-company-list {
+  display: grid;
+  gap: 10px;
+  border: 1px solid #e1eaf3;
+  border-radius: 8px;
+  padding: 14px;
+  background: #fbfdff;
+}
+
+.client-company-list h3 {
+  margin: 0;
+}
+
+.client-company-list article {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.8fr) minmax(280px, 1.2fr);
+  gap: 12px;
+  border: 1px solid #dce6f0;
+  border-radius: 8px;
+  padding: 12px;
+  background: #fff;
+}
+
+.client-company-list article div {
+  display: grid;
+  gap: 5px;
+}
+
+.client-company-list span,
+.client-company-list li {
+  color: #63738a;
+}
+
+.client-company-list ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
+}
+
+.client-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.client-form-grid h3,
+.client-form-grid .wide,
+.client-form-grid button,
+.client-form-message {
+  grid-column: 1 / -1;
+}
+
+.client-form-grid h3 {
+  margin: 12px 0 0;
+  border-top: 1px solid #e1eaf3;
+  padding-top: 14px;
+  color: #1f2d44;
+}
+
+.client-form-grid h3:first-child {
+  margin-top: 0;
+  border-top: 0;
+  padding-top: 0;
+}
+
+.client-form-grid label {
+  display: grid;
+  gap: 7px;
+  color: #41536d;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.client-form-grid input,
+.client-form-grid select {
+  width: 100%;
+  border: 1px solid #cfdce9;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #fbfdff;
+  color: #1f2d44;
+}
+
+.client-form-message {
+  border: 1px solid #b8e2c7;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #ecfff3;
+  color: #174b2e;
+  font-weight: 800;
+}
+
+.client-form-box {
+  display: grid;
+  min-height: 220px;
+  place-items: center;
+  gap: 8px;
+  border: 1px dashed #b9c9dc;
+  border-radius: 10px;
+  padding: 24px;
+  background: #f8fbff;
+  text-align: center;
+}
+
+@media (max-width: 760px) {
+  .client-form-grid,
+  .client-company-list article {
+    grid-template-columns: 1fr;
+  }
 }
 
 .station-belt {
