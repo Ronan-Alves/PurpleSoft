@@ -22,7 +22,12 @@ docker compose up --build
 
 No Docker, o backend roda `alembic upgrade head` automaticamente antes de iniciar a API.
 
-O login aceita qualquer email e senha no MVP. Se a API ainda estiver subindo, o frontend usa dados locais de demonstracao para manter a experiencia navegavel.
+Login operacional local:
+
+- Email: `gerente@purplebpo.com.br`
+- Senha: `purple123`
+
+As rotas principais da API exigem JWT. O portal do cliente tambem usa token proprio, gerado no login do cliente ou no redirecionamento seguro feito pelo funcionario.
 
 Guia completo de operacao, banco e comandos: [docs/GUIA_DO_SISTEMA.md](docs/GUIA_DO_SISTEMA.md)
 

@@ -78,7 +78,7 @@ class ClientAccessOut(BaseModel):
     id: str
     customerId: str
     email: str
-    password: str
+    password: str | None = None
     createdAt: str
 
 
@@ -101,6 +101,13 @@ class CustomerBasicRegistrationOut(BaseModel):
 class ClientLoginOut(BaseModel):
     customerId: str
     customerName: str
+    access_token: str
+    token_type: str = "bearer"
+
+
+class ClientImpersonationRequest(BaseModel):
+    customerId: str
+    pendingId: str | None = None
 
 
 class ClientPendingsOut(BaseModel):
@@ -127,6 +134,25 @@ class AccountingClientCompanyIn(BaseModel):
     spedPeriod: str
 
 
+class AccountingClientCompanyBulkUpdateIn(BaseModel):
+    customerId: str
+    pendingId: str
+    companyIds: list[str]
+    taxRegime: str | None = None
+    spedEcdDelivery: str | None = None
+    financialSystemReports: str | None = None
+    onlyBankStatements: str | None = None
+    banksUsed: str | None = None
+    averageBankPages: str | None = None
+    hasApplicationStatementsPdf: str | None = None
+    accountingDelayed: str | None = None
+    wantsAccountingRegularization: str | None = None
+    closingFrequency: str | None = None
+    systemUsed: str | None = None
+    wantsSpedEcdEcf: str | None = None
+    spedPeriod: str | None = None
+
+
 class AccountingClientCompanyOut(AccountingClientCompanyIn):
     id: str
     createdAt: str
@@ -135,3 +161,19 @@ class AccountingClientCompanyOut(AccountingClientCompanyIn):
 
 class AccountingClientCompaniesOut(BaseModel):
     companies: list[AccountingClientCompanyOut]
+
+
+class AuditLogOut(BaseModel):
+    id: str
+    occurredAt: str
+    actorType: str
+    actorSubject: str
+    action: str
+    entityType: str
+    entityId: str
+    customerId: str | None = None
+    details: dict[str, object]
+
+
+class AuditLogsOut(BaseModel):
+    logs: list[AuditLogOut]

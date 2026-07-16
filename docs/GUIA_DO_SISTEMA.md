@@ -85,14 +85,25 @@ Sem Docker, o backend espera o Postgres em:
 postgresql+psycopg://purplesoft:purplesoft@localhost:5438/purplesoft
 ```
 
-## Login do MVP
+## Login e Seguranca Local
 
-No MVP, o login aceita qualquer email e senha. O frontend ja vem preenchido com:
+O login operacional local usa:
 
 - Email: `gerente@purplebpo.com.br`
 - Senha: `purple123`
 
-Isso e temporario. A autenticacao real deve ser implementada quando criarmos usuarios, papeis e permissoes.
+As rotas operacionais e do portal do cliente exigem token JWT. Sem token, a API responde `401`. Se um cliente tentar acessar dados de outro cliente, a API responde `403`.
+
+Variaveis de ambiente aceitas pelo Docker Compose:
+
+```text
+JWT_SECRET=troque-por-um-segredo-longo
+OPERATIONAL_EMAIL=gerente@purplebpo.com.br
+OPERATIONAL_PASSWORD=purple123
+POSTGRES_PASSWORD=purplesoft
+```
+
+Em producao, troque `JWT_SECRET`, `OPERATIONAL_PASSWORD` e `POSTGRES_PASSWORD`.
 
 ## Navegacao da Planta Industrial
 
@@ -197,6 +208,8 @@ docker compose ps
 ```
 
 O servico `postgres` deve aparecer como `healthy`.
+
+Observacao: no Docker Compose atual, o Postgres fica publicado apenas em `127.0.0.1:5438`. Isso permite conexao local pelo DBeaver, mas evita expor o banco para outras maquinas da rede.
 
 ## Migrations Do Banco
 
@@ -350,8 +363,40 @@ docker compose up --build
 ## Endpoints Principais
 
 - `GET /health`: verifica se a API esta online.
-- `POST /auth/login`: login temporario do MVP.
-- `GET /operation-map`: retorna areas, tarefas e resumo da operacao para o dashboard.
+- `POST /auth/login`: login operacional e geracao de JWT.
+- `GET /operation-map`: retorna areas, tarefas e resumo da operacao para o dashboard. Exige token operacional.
+- `POST /client/login`: login do cliente e geracao de JWT do portal.
+- `POST /client/impersonation-token`: permite ao funcionario abrir a pendencia do cliente de forma autenticada.
+- `GET /client/pendings`: lista pendencias do cliente autenticado.
+- `POST /client/accounting-companies`: cadastra empresa da pendencia contabil do cliente autenticado.
+- `PUT /client/accounting-companies/{company_id}`: edita empresa da pendencia contabil.
+- `PATCH /client/accounting-companies/bulk`: aplica campos em lote nas empresas selecionadas.
+- `GET /audit-logs`: lista logs de auditoria. Exige token operacional.
+
+## Auditoria de Alteracoes
+
+O sistema grava logs na tabela `audit_logs` quando registros importantes sao criados ou editados.
+
+Eventos cobertos neste momento:
+
+- criacao/edicao de cadastro basico do cliente;
+- criacao de acesso do portal do cliente;
+- criacao de pendencia do cliente;
+- abertura de pendencia pelo funcionario em nome do cliente;
+- criacao de empresa no formulario contabil;
+- edicao individual de empresa;
+- edicao em lote de empresas.
+
+Campos principais da tabela:
+
+- `occurred_at`: data/hora do evento;
+- `actor_type`: tipo do ator, como `operator` ou `client`;
+- `actor_subject`: email ou identificador do ator;
+- `action`: acao, como `create`, `update`, `bulk_update` ou `impersonate`;
+- `entity_type`: tipo do registro alterado;
+- `entity_id`: id do registro alterado;
+- `customer_id`: cliente relacionado, quando existir;
+- `details`: detalhes em JSON.
 
 ## Arquivos Mais Importantes
 

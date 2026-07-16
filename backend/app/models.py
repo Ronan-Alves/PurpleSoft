@@ -166,3 +166,17 @@ class StationTime(Base):
 
     station_key: Mapped[str] = mapped_column(String(120), primary_key=True)
     elapsed_seconds: Mapped[int] = mapped_column(default=0, nullable=False)
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    occurred_at: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    actor_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    actor_subject: Mapped[str] = mapped_column(String(180), nullable=False)
+    action: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    entity_type: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    entity_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    customer_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    details: Mapped[str] = mapped_column(Text, nullable=False, default="{}")

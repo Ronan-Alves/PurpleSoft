@@ -1,0 +1,466 @@
+import { useCallback, useEffect, useState } from "react";
+
+export const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8088";
+
+export type WorkArea = {
+  id: string;
+  name: string;
+  kind: string;
+  status: string;
+  position_x: number;
+  position_y: number;
+  wip: number;
+  pending: number;
+  priority: number;
+};
+
+export type Task = {
+  id: number;
+  title: string;
+  client_name: string;
+  status: string;
+  area_id: string;
+};
+
+export type OperationMap = {
+  areas: WorkArea[];
+  tasks: Task[];
+  summary: Record<string, number>;
+};
+
+export const processPoints = [
+  { id: "p1", label: "1", name: "Entrada", x: 9, y: 34 },
+  { id: "p2", label: "2", name: "Cadastro", x: 22, y: 34 },
+  { id: "p3", label: "3", name: "Financeiro", x: 36, y: 34 },
+  { id: "p4", label: "4", name: "Triagem", x: 50, y: 33 },
+  { id: "p5", label: "5", name: "Contabil", x: 66, y: 26 },
+  { id: "p6", label: "6", name: "Pessoal", x: 64, y: 62 },
+  { id: "p7", label: "7", name: "Consolidacao", x: 81, y: 48 },
+  { id: "p8", label: "8", name: "Entrega", x: 93, y: 42 }
+];
+
+export const departmentZones = [
+  { id: "contabil-zone", title: "Departamento Contabil", subtitle: "Receitas · Despesas · Ajustes", x: 55, y: 9, width: 25, height: 29 },
+  { id: "pessoal-zone", title: "Departamento Pessoal", subtitle: "Admissoes · Rescisoes · Folha", x: 53, y: 49, width: 26, height: 28 }
+];
+
+export const fallbackMap: OperationMap = {
+  areas: [
+    { id: "entrada", name: "Entrada da Demanda", kind: "intake", status: "available", position_x: 9, position_y: 22, wip: 12, pending: 3, priority: 0 },
+    { id: "cadastro", name: "Cadastro", kind: "station", status: "running", position_x: 22, position_y: 23, wip: 9, pending: 2, priority: 1 },
+    { id: "financeiro", name: "Financeiro", kind: "station", status: "attention", position_x: 36, position_y: 23, wip: 14, pending: 5, priority: 2 },
+    { id: "triagem", name: "Triagem", kind: "station", status: "running", position_x: 50, position_y: 22, wip: 18, pending: 4, priority: 1 },
+    { id: "contabil", name: "Departamento Contabil", kind: "department", status: "running", position_x: 67.5, position_y: 22, wip: 31, pending: 8, priority: 3 },
+    { id: "pessoal", name: "Departamento Pessoal", kind: "department", status: "available", position_x: 66, position_y: 62, wip: 24, pending: 6, priority: 1 },
+    { id: "consolidacao", name: "Consolidacao", kind: "station", status: "running", position_x: 82, position_y: 49, wip: 16, pending: 2, priority: 0 },
+    { id: "entrega", name: "Entrega Final", kind: "delivery", status: "done", position_x: 93, position_y: 35, wip: 7, pending: 1, priority: 0 }
+  ],
+  tasks: [
+    { id: 1, title: "Fechamento contabil", client_name: "Escritorio Alfa", status: "running", area_id: "contabil" },
+    { id: 2, title: "Conciliacao bancaria", client_name: "Cliente Aurora", status: "blocked", area_id: "contabil" },
+    { id: 3, title: "Admissao mensal", client_name: "Cliente Prisma", status: "running", area_id: "pessoal" }
+  ],
+  summary: { running: 42, pending: 8, priority: 5, blocked: 3, productivity: 78, quality: 96, done: 128 }
+};
+
+export type Priority = "baixa" | "normal" | "alta" | "critica";
+export type DemandStatus = "entrada" | "cadastro" | "financeiro" | "triagem" | "em_producao" | "entrega" | "concluida";
+export type TaskStatus = "triada" | "em_andamento" | "concluida" | "bloqueada";
+
+export type Office = {
+  id: string;
+  name: string;
+};
+
+export type CustomerContact = {
+  id: string;
+  name: string;
+  role: string;
+  phone: string;
+  email: string;
+};
+
+export type ServiceInterest = "contabil" | "pessoal" | "outro";
+
+export type Customer = {
+  id: string;
+  officeId: string;
+  legalName: string;
+  cnpj: string;
+  tradeName?: string;
+  contractAddress?: string;
+  contractCityState?: string;
+  contractEmail?: string;
+  contacts?: CustomerContact[];
+  serviceInterests?: ServiceInterest[];
+  otherServiceDescription?: string;
+};
+
+export type Demand = {
+  id: string;
+  title: string;
+  officeId: string;
+  customerId: string;
+  status: DemandStatus;
+  priority: Priority;
+  description: string;
+  dueDate: string;
+  createdAt: string;
+  financialStatus: string;
+};
+
+export type OperationTask = {
+  id: string;
+  demandId: string;
+  departmentId: "contabil" | "pessoal" | "financeiro";
+  stationId: string;
+  title: string;
+  priority: Priority;
+  assignee: string;
+  status: TaskStatus;
+  procedureKey: string;
+  elapsedSeconds: number;
+};
+
+export type Procedure = {
+  stationKey: string;
+  text: string;
+};
+
+export type ClientAccess = {
+  id: string;
+  customerId: string;
+  email: string;
+  password?: string | null;
+  createdAt: string;
+};
+
+export type ClientLoginResponse = {
+  customerId: string;
+  customerName: string;
+  access_token: string;
+  token_type: string;
+};
+
+export type ClientPending = {
+  id: string;
+  customerId: string;
+  title: string;
+  description: string;
+  status: "pendente" | "em_preenchimento" | "enviada";
+  createdAt: string;
+  formType: "contabil_onboarding";
+};
+
+export type CustomerBasicRegistrationResponse = {
+  customer: Customer;
+  access: ClientAccess | null;
+  pending: ClientPending | null;
+};
+
+export type ClientPendingsResponse = {
+  pendings: ClientPending[];
+};
+
+export type AccountingClientCompany = {
+  id: string;
+  customerId: string;
+  pendingId: string;
+  companyName: string;
+  cnpj: string;
+  taxRegime: string;
+  spedEcdDelivery: string;
+  financialSystemReports: string;
+  onlyBankStatements: string;
+  banksUsed: string;
+  averageBankPages: string;
+  hasApplicationStatementsPdf: string;
+  accountingDelayed: string;
+  wantsAccountingRegularization: string;
+  closingFrequency: string;
+  systemUsed: string;
+  wantsSpedEcdEcf: string;
+  spedPeriod: string;
+  createdAt: string;
+  scopeSummary: string[];
+};
+
+export type AccountingClientCompaniesResponse = {
+  companies: AccountingClientCompany[];
+};
+
+export type OperationState = {
+  offices: Office[];
+  customers: Customer[];
+  demands: Demand[];
+  tasks: OperationTask[];
+  procedures: Procedure[];
+  stationSeconds: Record<string, number>;
+  clientAccesses: ClientAccess[];
+  clientPendings: ClientPending[];
+};
+
+export type TaskTemplate = {
+  id: string;
+  departmentId: OperationTask["departmentId"];
+  stationId: string;
+  title: string;
+  procedureKey: string;
+};
+
+export const storageKey = "purplesoft_operation_state_v1";
+export const clientSessionKey = "purplesoft_client_session_v1";
+export const operatorTokenKey = "purplesoft_token";
+export const employees = ["Ana Souza", "Bruno Lima", "Camila Rocha", "Diego Martins", "Equipe Fiscal"];
+
+export const departmentCatalog = {
+  contabil: {
+    title: "Departamento Contabil",
+    stations: [
+      { id: "conciliacao", title: "Conciliacao Bancaria" },
+      { id: "receitas", title: "Receitas" },
+      { id: "despesas", title: "Despesas" },
+      { id: "ajustes", title: "Ajustes" }
+    ]
+  },
+  pessoal: {
+    title: "Departamento Pessoal",
+    stations: [
+      { id: "admissoes", title: "Admissoes" },
+      { id: "rescisoes", title: "Rescisoes" },
+      { id: "ferias", title: "Ferias" },
+      { id: "folha", title: "Folha de Pagamento" }
+    ]
+  },
+  financeiro: {
+    title: "Financeiro",
+    stations: [
+      { id: "documentos", title: "Documentos" },
+      { id: "honorarios", title: "Honorarios" },
+      { id: "cobrancas", title: "Cobrancas" }
+    ]
+  }
+} as const;
+
+export const taskTemplates: TaskTemplate[] = [
+  { id: "conciliacao", departmentId: "contabil", stationId: "conciliacao", title: "Conciliar bancos do mes", procedureKey: "contabil:conciliacao" },
+  { id: "receitas", departmentId: "contabil", stationId: "receitas", title: "Conferir receitas e notas emitidas", procedureKey: "contabil:receitas" },
+  { id: "despesas", departmentId: "contabil", stationId: "despesas", title: "Classificar despesas e documentos", procedureKey: "contabil:despesas" },
+  { id: "ajustes", departmentId: "contabil", stationId: "ajustes", title: "Lancar ajustes de fechamento", procedureKey: "contabil:ajustes" },
+  { id: "admissoes", departmentId: "pessoal", stationId: "admissoes", title: "Processar admissoes do periodo", procedureKey: "pessoal:admissoes" },
+  { id: "rescisoes", departmentId: "pessoal", stationId: "rescisoes", title: "Conferir rescisoes pendentes", procedureKey: "pessoal:rescisoes" },
+  { id: "ferias", departmentId: "pessoal", stationId: "ferias", title: "Programar e validar ferias", procedureKey: "pessoal:ferias" },
+  { id: "folha", departmentId: "pessoal", stationId: "folha", title: "Fechar folha de pagamento", procedureKey: "pessoal:folha" }
+];
+
+export const initialOperationState: OperationState = {
+  offices: [
+    { id: "office-1", name: "Escritorio Alfa Contabil" },
+    { id: "office-2", name: "Martins & Rocha Consultoria" }
+  ],
+  customers: [
+    {
+      id: "customer-1",
+      officeId: "office-1",
+      legalName: "Aurora Comercio de Alimentos Ltda",
+      cnpj: "12.345.678/0001-90",
+      tradeName: "Aurora Alimentos",
+      contractAddress: "Av. Central, 1200",
+      contractCityState: "Sao Paulo/SP",
+      contractEmail: "contratos@aurora.com.br",
+      contacts: [{ id: "contact-1", name: "Mariana Costa", role: "Financeiro", phone: "(11) 99999-1000", email: "mariana@aurora.com.br" }],
+      serviceInterests: ["contabil", "pessoal"]
+    },
+    {
+      id: "customer-2",
+      officeId: "office-1",
+      legalName: "Prisma Tecnologia e Servicos Ltda",
+      cnpj: "22.987.654/0001-10",
+      tradeName: "Prisma Tech",
+      contacts: [{ id: "contact-2", name: "Renato Alves", role: "Socio administrador", phone: "(11) 98888-2200", email: "renato@prisma.com.br" }],
+      serviceInterests: ["pessoal"]
+    },
+    {
+      id: "customer-3",
+      officeId: "office-2",
+      legalName: "Horizonte Transportes Ltda",
+      cnpj: "33.222.111/0001-44",
+      tradeName: "Horizonte",
+      contacts: [{ id: "contact-3", name: "Paula Martins", role: "Diretora", phone: "(21) 97777-3300", email: "paula@horizonte.com.br" }],
+      serviceInterests: ["contabil"]
+    }
+  ],
+  demands: [
+    {
+      id: "demand-1",
+      title: "Fechamento mensal 05/2026",
+      officeId: "office-1",
+      customerId: "customer-1",
+      status: "em_producao",
+      priority: "alta",
+      description: "Fechamento contabil e folha mensal com prazo curto.",
+      dueDate: "2026-06-20",
+      createdAt: "2026-06-10",
+      financialStatus: "honorarios em dia"
+    },
+    {
+      id: "demand-2",
+      title: "Regularizacao admissional",
+      officeId: "office-1",
+      customerId: "customer-2",
+      status: "triagem",
+      priority: "normal",
+      description: "Cliente enviou novos colaboradores para cadastro e conferencia.",
+      dueDate: "2026-06-18",
+      createdAt: "2026-06-11",
+      financialStatus: "documentos financeiros pendentes"
+    },
+    {
+      id: "demand-3",
+      title: "Entrega de demonstrativos gerenciais",
+      officeId: "office-2",
+      customerId: "customer-3",
+      status: "entrega",
+      priority: "critica",
+      description: "Consolidar demonstrativos e liberar entrega final ao escritorio.",
+      dueDate: "2026-06-14",
+      createdAt: "2026-06-09",
+      financialStatus: "liberado"
+    }
+  ],
+  tasks: [
+    { id: "task-1", demandId: "demand-1", departmentId: "contabil", stationId: "conciliacao", title: "Conciliar bancos do mes", priority: "alta", assignee: "Ana Souza", status: "em_andamento", procedureKey: "contabil:conciliacao", elapsedSeconds: 1320 },
+    { id: "task-2", demandId: "demand-1", departmentId: "contabil", stationId: "receitas", title: "Conferir receitas e notas emitidas", priority: "alta", assignee: "Bruno Lima", status: "triada", procedureKey: "contabil:receitas", elapsedSeconds: 0 },
+    { id: "task-3", demandId: "demand-1", departmentId: "pessoal", stationId: "folha", title: "Fechar folha de pagamento", priority: "alta", assignee: "Camila Rocha", status: "triada", procedureKey: "pessoal:folha", elapsedSeconds: 0 },
+    { id: "task-4", demandId: "demand-3", departmentId: "contabil", stationId: "ajustes", title: "Revisar ajustes finais", priority: "critica", assignee: "Diego Martins", status: "concluida", procedureKey: "contabil:ajustes", elapsedSeconds: 2410 },
+    { id: "task-5", demandId: "demand-3", departmentId: "pessoal", stationId: "ferias", title: "Validar provisao de ferias", priority: "critica", assignee: "Camila Rocha", status: "concluida", procedureKey: "pessoal:ferias", elapsedSeconds: 980 }
+  ],
+  procedures: [
+    { stationKey: "contabil:conciliacao", text: "Baixar extratos, importar OFX, comparar saldos e marcar divergencias antes de liberar receitas/despesas." },
+    { stationKey: "contabil:receitas", text: "Conferir notas emitidas, receitas recorrentes e impostos destacados antes da consolidacao." },
+    { stationKey: "pessoal:folha", text: "Conferir eventos, descontos, beneficios e bases de encargos antes de concluir a folha." }
+  ],
+  stationSeconds: {
+    "contabil:conciliacao": 3600,
+    "contabil:ajustes": 2800,
+    "pessoal:folha": 2100
+  },
+  clientAccesses: [],
+  clientPendings: [
+    {
+      id: "pending-1",
+      customerId: "customer-1",
+      title: "Cadastro inicial para servico contabil",
+      description: "Preencha as informacoes iniciais para prepararmos o contrato e a implantacao contabil.",
+      status: "pendente",
+      createdAt: "2026-06-10",
+      formType: "contabil_onboarding"
+    },
+    {
+      id: "pending-2",
+      customerId: "customer-3",
+      title: "Cadastro inicial para servico contabil",
+      description: "Preencha as informacoes iniciais para prepararmos o contrato e a implantacao contabil.",
+      status: "pendente",
+      createdAt: "2026-06-10",
+      formType: "contabil_onboarding"
+    }
+  ]
+};
+
+export function uniqueId(prefix: string) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+}
+
+export function normalizeOperationState(state: OperationState): OperationState {
+  return {
+    ...initialOperationState,
+    ...state,
+    offices: state.offices ?? [],
+    customers: state.customers ?? [],
+    demands: state.demands ?? [],
+    tasks: state.tasks ?? [],
+    procedures: state.procedures ?? [],
+    stationSeconds: state.stationSeconds ?? {},
+    clientAccesses: (state.clientAccesses ?? []).map((access) => ({ ...access, password: null })),
+    clientPendings: state.clientPendings ?? []
+  };
+}
+
+export function loadOperationState(): OperationState {
+  const stored = localStorage.getItem(storageKey);
+  if (!stored) return initialOperationState;
+  try {
+    return normalizeOperationState(JSON.parse(stored) as OperationState);
+  } catch {
+    return initialOperationState;
+  }
+}
+
+export function useOperationState() {
+  const [state, setState] = useState<OperationState>(() => loadOperationState());
+
+  const commit = useCallback((updater: (current: OperationState) => OperationState) => {
+    setState((current) => {
+      const next = updater(current);
+      localStorage.setItem(storageKey, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  return { state, commit };
+}
+
+export function formatDuration(seconds: number) {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const rest = seconds % 60;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(rest).padStart(2, "0")}`;
+}
+
+export function officeName(state: OperationState, officeId: string) {
+  return state.offices.find((office) => office.id === officeId)?.name ?? "Escritorio nao localizado";
+}
+
+export function customerName(state: OperationState, customerId: string) {
+  return state.customers.find((customer) => customer.id === customerId)?.legalName ?? "Cliente nao localizado";
+}
+
+export function demandProgress(state: OperationState, demandId: string) {
+  const tasks = state.tasks.filter((task) => task.demandId === demandId);
+  const done = tasks.filter((task) => task.status === "concluida").length;
+  return { total: tasks.length, done };
+}
+
+export function useOperationMap() {
+  const [data, setData] = useState<OperationMap>(fallbackMap);
+
+  useEffect(() => {
+    fetch(`${API_URL}/operation-map`, { headers: authHeaders() })
+      .then((response) => (response.ok ? response.json() : fallbackMap))
+      .then(setData)
+      .catch(() => setData(fallbackMap));
+  }, []);
+
+  return data;
+}
+
+export function isLoggedIn() {
+  return Boolean(localStorage.getItem(operatorTokenKey));
+}
+
+export function authHeaders(extra?: HeadersInit): HeadersInit {
+  const token = localStorage.getItem(operatorTokenKey);
+  return token ? { ...extra, Authorization: `Bearer ${token}` } : { ...extra };
+}
+
+export function clientAuthHeaders(extra?: HeadersInit): HeadersInit {
+  const stored = localStorage.getItem(clientSessionKey);
+  if (!stored) return { ...extra };
+  try {
+    const session = JSON.parse(stored) as { accessToken?: string };
+    return session.accessToken ? { ...extra, Authorization: `Bearer ${session.accessToken}` } : { ...extra };
+  } catch {
+    return { ...extra };
+  }
+}

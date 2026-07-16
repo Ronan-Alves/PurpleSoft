@@ -4,9 +4,9 @@ services:
     environment:
       POSTGRES_DB: purplesoft
       POSTGRES_USER: purplesoft
-      POSTGRES_PASSWORD: purplesoft
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-purplesoft}
     ports:
-      - "5438:5432"
+      - "127.0.0.1:5438:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -19,8 +19,11 @@ services:
     build:
       context: ./backend
     environment:
-      DATABASE_URL: postgresql+psycopg://purplesoft:purplesoft@postgres:5432/purplesoft
+      DATABASE_URL: postgresql+psycopg://purplesoft:${POSTGRES_PASSWORD:-purplesoft}@postgres:5432/purplesoft
       CORS_ORIGINS: http://localhost:5178,http://127.0.0.1:5178
+      JWT_SECRET: ${JWT_SECRET:-dev-only-change-before-production-8f9f6c7b4f2a4a22}
+      OPERATIONAL_EMAIL: ${OPERATIONAL_EMAIL:-gerente@purplebpo.com.br}
+      OPERATIONAL_PASSWORD: ${OPERATIONAL_PASSWORD:-purple123}
     ports:
       - "8088:8000"
     depends_on:

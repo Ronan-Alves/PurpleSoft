@@ -1,30 +1,58 @@
 .fd-page {
   display: grid;
-  min-height: 100vh;
-  place-items: center;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 10px;
+  min-height: calc(100vh - 72px);
+  height: calc(100vh - 72px);
+  padding: 10px;
   overflow: hidden;
   background: #dfeaf5;
+  transition: grid-template-columns 180ms ease;
+}
+
+.fd-page.fd-right-collapsed {
+  grid-template-columns: minmax(0, 1fr) 48px;
+}
+
+.fd-factory-area {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
 }
 
 .fd-scale-shell {
-  width: 1440px;
-  height: 760px;
-  transform-origin: center;
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
 }
 
 .fd-stage {
   position: relative;
-  width: 1440px;
-  height: 760px;
+  width: 100%;
+  height: 100%;
   overflow: hidden;
   border: 1px solid #d7e3ef;
-  border-radius: 10px;
+  border-radius: 8px;
   background:
     linear-gradient(180deg, rgb(255 255 255 / 78%), rgb(238 244 251 / 96%)),
     #eef4fb;
   box-shadow: 0 28px 90px rgb(31 54 82 / 22%);
   cursor: grab;
   touch-action: none;
+}
+
+.fd-side-panel {
+  min-height: 0;
+}
+
+.fd-right-collapsed .right-panel {
+  overflow: hidden;
+}
+
+.fd-right-collapsed .right-panel-content {
+  display: none;
 }
 
 .fd-stage-panning {

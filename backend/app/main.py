@@ -1,16 +1,22 @@
 from datetime import datetime, timedelta, timezone
+import json
+from secrets import token_urlsafe
 from unicodedata import normalize
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import jwt
+from jose.exceptions import JWTError
+from passlib.context import CryptContext
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .database import SessionLocal, get_db
 from .models import (
     AccountingClientCompany,
+    AuditLog,
     ClientAccess,
     ClientPending,
     Customer,
@@ -22,9 +28,13 @@ from .models import (
 )
 from .schemas import (
     AccountingClientCompaniesOut,
+    AccountingClientCompanyBulkUpdateIn,
     AccountingClientCompanyIn,
     AccountingClientCompanyOut,
+    AuditLogOut,
+    AuditLogsOut,
     ClientAccessOut,
+    ClientImpersonationRequest,
     ClientLoginOut,
     ClientPendingsOut,
     ClientPendingOut,
@@ -41,6 +51,8 @@ from .seed import seed_database
 from .settings import settings
 
 app = FastAPI(title="PurpleSoft API", version="0.1.0")
+bearer_scheme = HTTPBearer(auto_error=False)
+password_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 app.add_middleware(
     CORSMiddleware,
@@ -59,6 +71,10 @@ def today_iso() -> str:
     return datetime.now(timezone.utc).date().isoformat()
 
 
+def now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
 def portal_slug(value: str) -> str:
     ascii_value = normalize("NFD", value).encode("ascii", "ignore").decode("ascii")
     cleaned = "".join(char.lower() if char.isalnum() else "." for char in ascii_value)
@@ -67,9 +83,95 @@ def portal_slug(value: str) -> str:
 
 
 def generate_client_password(customer: Customer) -> str:
-    digits = "".join(char for char in customer.cnpj if char.isdigit())[-4:] or "0000"
-    base = portal_slug(customer.trade_name or customer.legal_name).replace(".", "")[:8] or "cliente"
-    return f"{base}{digits}"
+    return token_urlsafe(12)
+
+
+def hash_password(password: str) -> str:
+    return password_context.hash(password)
+
+
+def verify_password(password: str, stored_password: str) -> bool:
+    if stored_password.startswith("$2"):
+        return password_context.verify(password, stored_password)
+    return password == stored_password
+
+
+def make_token(subject: str, role: str, customer_id: str | None = None) -> str:
+    expires_at = datetime.now(timezone.utc) + timedelta(hours=8)
+    payload = {"sub": subject, "role": role, "exp": expires_at}
+    if customer_id:
+        payload["customer_id"] = customer_id
+    return jwt.encode(payload, settings.jwt_secret, algorithm="HS256")
+
+
+def decode_token(credentials: HTTPAuthorizationCredentials | None, expected_role: str) -> dict[str, str]:
+    if not credentials:
+        raise HTTPException(status_code=401, detail="Token de acesso obrigatorio.")
+    try:
+        payload = jwt.decode(credentials.credentials, settings.jwt_secret, algorithms=["HS256"])
+    except JWTError as exc:
+        raise HTTPException(status_code=401, detail="Token invalido ou expirado.") from exc
+    if payload.get("role") != expected_role:
+        raise HTTPException(status_code=403, detail="Acesso nao autorizado.")
+    return payload
+
+
+def require_operator(credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme)) -> dict[str, str]:
+    return decode_token(credentials, "operator")
+
+
+def require_client(credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme)) -> dict[str, str]:
+    payload = decode_token(credentials, "client")
+    if not payload.get("customer_id"):
+        raise HTTPException(status_code=401, detail="Token de cliente invalido.")
+    return payload
+
+
+def actor_from_token(payload: dict[str, str]) -> tuple[str, str]:
+    return payload.get("role", "unknown"), payload.get("sub", "unknown")
+
+
+def add_audit_log(
+    db: Session,
+    actor: dict[str, str],
+    action: str,
+    entity_type: str,
+    entity_id: str,
+    customer_id: str | None = None,
+    details: dict[str, object] | None = None,
+) -> None:
+    actor_type, actor_subject = actor_from_token(actor)
+    db.add(
+        AuditLog(
+            id=make_id("audit"),
+            occurred_at=now_iso(),
+            actor_type=actor_type,
+            actor_subject=actor_subject,
+            action=action,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            customer_id=customer_id,
+            details=json.dumps(details or {}, ensure_ascii=False),
+        )
+    )
+
+
+def audit_log_to_out(log: AuditLog) -> AuditLogOut:
+    try:
+        details = json.loads(log.details)
+    except json.JSONDecodeError:
+        details = {}
+    return AuditLogOut(
+        id=log.id,
+        occurredAt=log.occurred_at,
+        actorType=log.actor_type,
+        actorSubject=log.actor_subject,
+        action=log.action,
+        entityType=log.entity_type,
+        entityId=log.entity_id,
+        customerId=log.customer_id,
+        details=details,
+    )
 
 
 def customer_to_out(customer: Customer) -> CustomerOut:
@@ -91,14 +193,14 @@ def customer_to_out(customer: Customer) -> CustomerOut:
     )
 
 
-def access_to_out(access: ClientAccess | None) -> ClientAccessOut | None:
+def access_to_out(access: ClientAccess | None, temporary_password: str | None = None) -> ClientAccessOut | None:
     if not access:
         return None
     return ClientAccessOut(
         id=access.id,
         customerId=access.customer_id,
         email=access.email,
-        password=access.password,
+        password=temporary_password,
         createdAt=access.created_at,
     )
 
@@ -160,10 +262,57 @@ def accounting_company_to_out(company: AccountingClientCompany) -> AccountingCli
     )
 
 
+def fill_accounting_company(company: AccountingClientCompany, payload: AccountingClientCompanyIn) -> None:
+    company.company_name = payload.companyName
+    company.cnpj = payload.cnpj
+    company.tax_regime = payload.taxRegime
+    company.sped_ecd_delivery = payload.spedEcdDelivery
+    company.financial_system_reports = payload.financialSystemReports
+    company.only_bank_statements = payload.onlyBankStatements
+    company.banks_used = payload.banksUsed
+    company.average_bank_pages = payload.averageBankPages
+    company.has_application_statements_pdf = payload.hasApplicationStatementsPdf
+    company.accounting_delayed = payload.accountingDelayed
+    company.wants_accounting_regularization = payload.wantsAccountingRegularization
+    company.closing_frequency = payload.closingFrequency
+    company.system_used = payload.systemUsed
+    company.wants_sped_ecd_ecf = payload.wantsSpedEcdEcf
+    company.sped_period = payload.spedPeriod
+
+
+def apply_accounting_company_updates(company: AccountingClientCompany, updates: dict[str, str]) -> None:
+    field_map = {
+        "taxRegime": "tax_regime",
+        "spedEcdDelivery": "sped_ecd_delivery",
+        "financialSystemReports": "financial_system_reports",
+        "onlyBankStatements": "only_bank_statements",
+        "banksUsed": "banks_used",
+        "averageBankPages": "average_bank_pages",
+        "hasApplicationStatementsPdf": "has_application_statements_pdf",
+        "accountingDelayed": "accounting_delayed",
+        "wantsAccountingRegularization": "wants_accounting_regularization",
+        "closingFrequency": "closing_frequency",
+        "systemUsed": "system_used",
+        "wantsSpedEcdEcf": "wants_sped_ecd_ecf",
+        "spedPeriod": "sped_period",
+    }
+    for payload_field, model_field in field_map.items():
+        if payload_field in updates:
+            setattr(company, model_field, updates[payload_field])
+
+
 @app.on_event("startup")
 def on_startup() -> None:
     with SessionLocal() as db:
         seed_database(db)
+        legacy_accesses = db.scalars(select(ClientAccess)).all()
+        changed = False
+        for access in legacy_accesses:
+            if not access.password.startswith("$2"):
+                access.password = hash_password(access.password)
+                changed = True
+        if changed:
+            db.commit()
 
 
 @app.get("/health")
@@ -173,16 +322,19 @@ def health() -> dict[str, str]:
 
 @app.post("/auth/login", response_model=LoginResponse)
 def login(payload: LoginRequest) -> LoginResponse:
-    if not payload.email or not payload.password:
-        raise HTTPException(status_code=400, detail="Informe email e senha.")
+    if payload.email != settings.operational_email or payload.password != settings.operational_password:
+        raise HTTPException(status_code=401, detail="Login ou senha invalidos.")
 
-    expires_at = datetime.now(timezone.utc) + timedelta(hours=8)
-    token = jwt.encode({"sub": payload.email, "exp": expires_at}, settings.jwt_secret, algorithm="HS256")
+    token = make_token(payload.email, "operator")
     return LoginResponse(access_token=token, name="Gerente Operacional", role="Operacao")
 
 
 @app.post("/customers/basic-registration", response_model=CustomerBasicRegistrationOut)
-def create_basic_customer(payload: CustomerBasicRegistrationIn, db: Session = Depends(get_db)) -> CustomerBasicRegistrationOut:
+def create_basic_customer(
+    payload: CustomerBasicRegistrationIn,
+    operator: dict[str, str] = Depends(require_operator),
+    db: Session = Depends(get_db),
+) -> CustomerBasicRegistrationOut:
     office = db.scalar(select(Office).where(Office.name == payload.officeName))
     if not office:
         office = Office(id=make_id("office"), name=payload.officeName)
@@ -193,6 +345,9 @@ def create_basic_customer(payload: CustomerBasicRegistrationIn, db: Session = De
     if not customer:
         customer = Customer(id=make_id("customer"), office_id=office.id, legal_name=payload.legalName, cnpj=payload.cnpj)
         db.add(customer)
+        customer_action = "create"
+    else:
+        customer_action = "update"
 
     customer.office_id = office.id
     customer.legal_name = payload.legalName
@@ -224,19 +379,30 @@ def create_basic_customer(payload: CustomerBasicRegistrationIn, db: Session = De
     db.flush()
 
     access: ClientAccess | None = None
+    temporary_password: str | None = None
     pending: ClientPending | None = None
     if "contabil" in payload.serviceInterests:
         access = db.scalar(select(ClientAccess).where(ClientAccess.customer_id == customer.id))
         if not access:
             first_contact_email = next((contact.email for contact in customer.contacts if contact.email), None)
+            temporary_password = generate_client_password(customer)
             access = ClientAccess(
                 id=make_id("access"),
                 customer_id=customer.id,
                 email=first_contact_email or customer.contract_email or f"{portal_slug(customer.trade_name or customer.legal_name)}@portal.purplesoft",
-                password=generate_client_password(customer),
+                password=hash_password(temporary_password),
                 created_at=today_iso(),
             )
             db.add(access)
+            add_audit_log(
+                db,
+                operator,
+                "create",
+                "client_access",
+                access.id,
+                customer.id,
+                {"email": access.email},
+            )
 
         pending = db.scalar(
             select(ClientPending).where(
@@ -255,7 +421,29 @@ def create_basic_customer(payload: CustomerBasicRegistrationIn, db: Session = De
                 form_type="contabil_onboarding",
             )
             db.add(pending)
+            add_audit_log(
+                db,
+                operator,
+                "create",
+                "client_pending",
+                pending.id,
+                customer.id,
+                {"formType": pending.form_type, "title": pending.title},
+            )
 
+    add_audit_log(
+        db,
+        operator,
+        customer_action,
+        "customer",
+        customer.id,
+        customer.id,
+        {
+            "legalName": customer.legal_name,
+            "cnpj": customer.cnpj,
+            "serviceInterests": payload.serviceInterests,
+        },
+    )
     db.commit()
     db.refresh(customer)
     if access:
@@ -263,39 +451,93 @@ def create_basic_customer(payload: CustomerBasicRegistrationIn, db: Session = De
     if pending:
         db.refresh(pending)
 
-    return CustomerBasicRegistrationOut(customer=customer_to_out(customer), access=access_to_out(access), pending=pending_to_out(pending))
+    return CustomerBasicRegistrationOut(customer=customer_to_out(customer), access=access_to_out(access, temporary_password), pending=pending_to_out(pending))
 
 
 @app.post("/client/login", response_model=ClientLoginOut)
 def client_login(payload: LoginRequest, db: Session = Depends(get_db)) -> ClientLoginOut:
-    access = db.scalar(select(ClientAccess).where(ClientAccess.email == payload.email, ClientAccess.password == payload.password))
-    if not access:
+    access = db.scalar(select(ClientAccess).where(ClientAccess.email == payload.email))
+    if not access or not verify_password(payload.password, access.password):
         raise HTTPException(status_code=401, detail="Login ou senha invalidos.")
-    return ClientLoginOut(customerId=access.customer_id, customerName=access.customer.legal_name)
+    if not access.password.startswith("$2"):
+        access.password = hash_password(payload.password)
+        db.commit()
+    return ClientLoginOut(
+        customerId=access.customer_id,
+        customerName=access.customer.legal_name,
+        access_token=make_token(access.email, "client", access.customer_id),
+    )
+
+
+@app.post("/client/impersonation-token", response_model=ClientLoginOut)
+def client_impersonation_token(
+    payload: ClientImpersonationRequest,
+    operator: dict[str, str] = Depends(require_operator),
+    db: Session = Depends(get_db),
+) -> ClientLoginOut:
+    customer = db.get(Customer, payload.customerId)
+    if not customer:
+        raise HTTPException(status_code=404, detail="Cliente nao localizado.")
+    if payload.pendingId:
+        pending = db.scalar(select(ClientPending).where(ClientPending.id == payload.pendingId, ClientPending.customer_id == customer.id))
+        if not pending:
+            raise HTTPException(status_code=404, detail="Pendencia nao localizada.")
+    add_audit_log(
+        db,
+        operator,
+        "impersonate",
+        "customer",
+        customer.id,
+        customer.id,
+        {"pendingId": payload.pendingId},
+    )
+    db.commit()
+    return ClientLoginOut(
+        customerId=customer.id,
+        customerName=customer.legal_name,
+        access_token=make_token(f"operator:{customer.id}", "client", customer.id),
+    )
 
 
 @app.get("/client/pendings", response_model=ClientPendingsOut)
-def client_pendings(customer_id: str = Query(...), db: Session = Depends(get_db)) -> ClientPendingsOut:
-    pendings = db.scalars(select(ClientPending).where(ClientPending.customer_id == customer_id).order_by(ClientPending.created_at.desc())).all()
+def client_pendings(
+    customer_id: str | None = Query(default=None),
+    client: dict[str, str] = Depends(require_client),
+    db: Session = Depends(get_db),
+) -> ClientPendingsOut:
+    token_customer_id = client["customer_id"]
+    if customer_id and customer_id != token_customer_id:
+        raise HTTPException(status_code=403, detail="Acesso nao autorizado para este cliente.")
+    pendings = db.scalars(select(ClientPending).where(ClientPending.customer_id == token_customer_id).order_by(ClientPending.created_at.desc())).all()
     return ClientPendingsOut(pendings=[pending_to_out(pending) for pending in pendings if pending_to_out(pending)])
 
 
 @app.get("/client/accounting-companies", response_model=AccountingClientCompaniesOut)
 def list_accounting_companies(
-    customer_id: str = Query(...),
+    customer_id: str | None = Query(default=None),
     pending_id: str = Query(...),
+    client: dict[str, str] = Depends(require_client),
     db: Session = Depends(get_db),
 ) -> AccountingClientCompaniesOut:
+    token_customer_id = client["customer_id"]
+    if customer_id and customer_id != token_customer_id:
+        raise HTTPException(status_code=403, detail="Acesso nao autorizado para este cliente.")
     companies = db.scalars(
         select(AccountingClientCompany)
-        .where(AccountingClientCompany.customer_id == customer_id, AccountingClientCompany.pending_id == pending_id)
+        .where(AccountingClientCompany.customer_id == token_customer_id, AccountingClientCompany.pending_id == pending_id)
         .order_by(AccountingClientCompany.created_at.desc(), AccountingClientCompany.company_name)
     ).all()
     return AccountingClientCompaniesOut(companies=[accounting_company_to_out(company) for company in companies])
 
 
 @app.post("/client/accounting-companies", response_model=AccountingClientCompanyOut)
-def create_accounting_company(payload: AccountingClientCompanyIn, db: Session = Depends(get_db)) -> AccountingClientCompanyOut:
+def create_accounting_company(
+    payload: AccountingClientCompanyIn,
+    client: dict[str, str] = Depends(require_client),
+    db: Session = Depends(get_db),
+) -> AccountingClientCompanyOut:
+    if payload.customerId != client["customer_id"]:
+        raise HTTPException(status_code=403, detail="Acesso nao autorizado para este cliente.")
     pending = db.scalar(
         select(ClientPending).where(
             ClientPending.id == payload.pendingId,
@@ -309,32 +551,120 @@ def create_accounting_company(payload: AccountingClientCompanyIn, db: Session = 
         id=make_id("company"),
         customer_id=payload.customerId,
         pending_id=payload.pendingId,
-        company_name=payload.companyName,
-        cnpj=payload.cnpj,
-        tax_regime=payload.taxRegime,
-        sped_ecd_delivery=payload.spedEcdDelivery,
-        financial_system_reports=payload.financialSystemReports,
-        only_bank_statements=payload.onlyBankStatements,
-        banks_used=payload.banksUsed,
-        average_bank_pages=payload.averageBankPages,
-        has_application_statements_pdf=payload.hasApplicationStatementsPdf,
-        accounting_delayed=payload.accountingDelayed,
-        wants_accounting_regularization=payload.wantsAccountingRegularization,
-        closing_frequency=payload.closingFrequency,
-        system_used=payload.systemUsed,
-        wants_sped_ecd_ecf=payload.wantsSpedEcdEcf,
-        sped_period=payload.spedPeriod,
+        company_name="",
+        cnpj="",
+        tax_regime="",
+        sped_ecd_delivery="",
+        financial_system_reports="",
+        only_bank_statements="",
+        banks_used="",
+        average_bank_pages="",
+        has_application_statements_pdf="",
+        accounting_delayed="",
+        wants_accounting_regularization="",
+        closing_frequency="",
+        system_used="",
+        wants_sped_ecd_ecf="",
+        sped_period="",
         created_at=today_iso(),
     )
+    fill_accounting_company(company, payload)
     db.add(company)
     pending.status = "em_preenchimento"
+    add_audit_log(
+        db,
+        client,
+        "create",
+        "accounting_client_company",
+        company.id,
+        company.customer_id,
+        {"companyName": company.company_name, "pendingId": company.pending_id},
+    )
     db.commit()
     db.refresh(company)
     return accounting_company_to_out(company)
 
 
+@app.put("/client/accounting-companies/{company_id}", response_model=AccountingClientCompanyOut)
+def update_accounting_company(
+    company_id: str,
+    payload: AccountingClientCompanyIn,
+    client: dict[str, str] = Depends(require_client),
+    db: Session = Depends(get_db),
+) -> AccountingClientCompanyOut:
+    if payload.customerId != client["customer_id"]:
+        raise HTTPException(status_code=403, detail="Acesso nao autorizado para este cliente.")
+    company = db.scalar(
+        select(AccountingClientCompany).where(
+            AccountingClientCompany.id == company_id,
+            AccountingClientCompany.customer_id == payload.customerId,
+            AccountingClientCompany.pending_id == payload.pendingId,
+        )
+    )
+    if not company:
+        raise HTTPException(status_code=404, detail="Empresa nao localizada.")
+    fill_accounting_company(company, payload)
+    add_audit_log(
+        db,
+        client,
+        "update",
+        "accounting_client_company",
+        company.id,
+        company.customer_id,
+        {"companyName": company.company_name, "pendingId": company.pending_id},
+    )
+    db.commit()
+    db.refresh(company)
+    return accounting_company_to_out(company)
+
+
+@app.patch("/client/accounting-companies/bulk", response_model=AccountingClientCompaniesOut)
+def bulk_update_accounting_companies(
+    payload: AccountingClientCompanyBulkUpdateIn,
+    client: dict[str, str] = Depends(require_client),
+    db: Session = Depends(get_db),
+) -> AccountingClientCompaniesOut:
+    if payload.customerId != client["customer_id"]:
+        raise HTTPException(status_code=403, detail="Acesso nao autorizado para este cliente.")
+    if not payload.companyIds:
+        raise HTTPException(status_code=400, detail="Selecione ao menos uma empresa.")
+
+    updates = payload.model_dump(exclude={"customerId", "pendingId", "companyIds"}, exclude_none=True)
+    if not updates:
+        raise HTTPException(status_code=400, detail="Selecione ao menos um campo para atualizar.")
+
+    companies = db.scalars(
+        select(AccountingClientCompany)
+        .where(
+            AccountingClientCompany.customer_id == payload.customerId,
+            AccountingClientCompany.pending_id == payload.pendingId,
+            AccountingClientCompany.id.in_(payload.companyIds),
+        )
+        .order_by(AccountingClientCompany.created_at.desc(), AccountingClientCompany.company_name)
+    ).all()
+    if len(companies) != len(set(payload.companyIds)):
+        raise HTTPException(status_code=404, detail="Uma ou mais empresas nao foram localizadas.")
+
+    for company in companies:
+        apply_accounting_company_updates(company, updates)
+        add_audit_log(
+            db,
+            client,
+            "bulk_update",
+            "accounting_client_company",
+            company.id,
+            company.customer_id,
+            {"pendingId": company.pending_id, "fields": sorted(updates.keys())},
+        )
+
+    db.commit()
+    for company in companies:
+        db.refresh(company)
+    return AccountingClientCompaniesOut(companies=[accounting_company_to_out(company) for company in companies])
+
+
 @app.get("/operation-map", response_model=OperationMap)
-def operation_map(db: Session = Depends(get_db)) -> OperationMap:
+def operation_map(_: dict[str, str] = Depends(require_operator), db: Session = Depends(get_db)) -> OperationMap:
     areas = db.scalars(select(WorkArea)).all()
     tasks = db.scalars(select(Task)).all()
     running = sum(1 for task in tasks if task.status == "running")
@@ -355,3 +685,20 @@ def operation_map(db: Session = Depends(get_db)) -> OperationMap:
             "done": done,
         },
     )
+
+
+@app.get("/audit-logs", response_model=AuditLogsOut)
+def audit_logs(
+    _: dict[str, str] = Depends(require_operator),
+    customer_id: str | None = Query(default=None),
+    entity_type: str | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=500),
+    db: Session = Depends(get_db),
+) -> AuditLogsOut:
+    query = select(AuditLog)
+    if customer_id:
+        query = query.where(AuditLog.customer_id == customer_id)
+    if entity_type:
+        query = query.where(AuditLog.entity_type == entity_type)
+    logs = db.scalars(query.order_by(AuditLog.occurred_at.desc()).limit(limit)).all()
+    return AuditLogsOut(logs=[audit_log_to_out(log) for log in logs])

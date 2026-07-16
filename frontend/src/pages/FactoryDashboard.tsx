@@ -1,11 +1,16 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Banknote,
   BarChart3,
+  Bell,
   Check,
+  ChevronLeft,
+  ChevronRight,
   FileText,
   LineChart,
+  PackageCheck,
   Settings,
+  ShieldCheck,
   Target,
   TrendingDown,
   User,
@@ -14,6 +19,8 @@ import {
   Workflow
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import Shell from "../components/Shell";
+import { useOperationMap } from "../app/shared";
 import "./FactoryDashboard.css";
 
 type MachineKind = "document" | "terminal" | "finance" | "triage";
@@ -49,6 +56,7 @@ const layoutStorageKey = "purplesoft_factory_dashboard_layout_v1";
 const socketStorageKey = "purplesoft_factory_dashboard_sockets_v1";
 
 const stageSize = { width: 1440, height: 760 };
+const defaultViewportSize: Position = { x: stageSize.width, y: stageSize.height };
 const factoryWorld = { width: 2200, height: 1200 };
 
 const areaRoutes: Partial<Record<LayoutId, AreaRouteId>> = {
@@ -104,10 +112,10 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
-function clampPan(position: Position): Position {
+function clampPan(position: Position, viewport: Position = defaultViewportSize): Position {
   return {
-    x: clamp(position.x, stageSize.width - factoryWorld.width, 0),
-    y: clamp(position.y, stageSize.height - factoryWorld.height, 0)
+    x: clamp(position.x, viewport.x - factoryWorld.width, 0),
+    y: clamp(position.y, viewport.y - factoryWorld.height, 0)
   };
 }
 
@@ -177,10 +185,7 @@ function saveSockets(sockets: SocketState) {
 }
 
 function scaleFromStage(target: Element) {
-  const stage = target.closest(".fd-stage");
-  if (!stage) return 1;
-  const rect = stage.getBoundingClientRect();
-  return rect.width / stageSize.width || 1;
+  return target.closest(".fd-stage") ? 1 : 1;
 }
 
 function absoluteSocket(layout: LayoutState, sockets: SocketState, id: LayoutId, side: SocketSide): Position {
@@ -490,12 +495,16 @@ function SocketHandle({ side, position, onMove }: {
 
 export default function FactoryDashboard() {
   const navigate = useNavigate();
+  const map = useOperationMap();
   const [layout, setLayout] = useState<LayoutState>(() => loadLayout());
   const [sockets, setSockets] = useState<SocketState>(() => loadSockets());
   const [designMode, setDesignMode] = useState(false);
   const [savedMessage, setSavedMessage] = useState("");
   const [viewportPan, setViewportPan] = useState<Position>({ x: 0, y: 0 });
+  const [viewportSize, setViewportSize] = useState<Position>(defaultViewportSize);
   const [isPanning, setIsPanning] = useState(false);
+  const [rightCollapsed, setRightCollapsed] = useState(false);
+  const stageRef = useRef<HTMLDivElement | null>(null);
   const panRef = useRef({
     active: false,
     moved: false,
@@ -505,6 +514,21 @@ export default function FactoryDashboard() {
     originY: 0,
     areaId: ""
   });
+
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const updateSize = () => {
+      const rect = stage.getBoundingClientRect();
+      const nextSize = { x: Math.round(rect.width), y: Math.round(rect.height) };
+      setViewportSize(nextSize);
+      setViewportPan((current) => clampPan(current, nextSize));
+    };
+    updateSize();
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(stage);
+    return () => observer.disconnect();
+  }, []);
 
   function moveNode(id: LayoutId, position: Position) {
     setLayout((current) => {
@@ -518,7 +542,7 @@ export default function FactoryDashboard() {
     localStorage.removeItem(socketStorageKey);
     setLayout(defaultLayout);
     setSockets(defaultSockets);
-    setViewportPan(clampPan({ x: 0, y: 0 }));
+    setViewportPan(clampPan({ x: 0, y: 0 }, viewportSize));
     setSavedMessage("Layout resetado");
   }
 
@@ -568,7 +592,7 @@ export default function FactoryDashboard() {
     setViewportPan(clampPan({
       x: Math.round(panRef.current.originX + deltaX / scale),
       y: Math.round(panRef.current.originY + deltaY / scale)
-    }));
+    }, viewportSize));
   }
 
   function onWorldPointerUp(event: React.PointerEvent<HTMLDivElement>) {
@@ -621,15 +645,17 @@ export default function FactoryDashboard() {
   }
 
   return (
-    <main className="fd-page">
-      <section className="fd-scale-shell">
-        <div className={`fd-stage ${designMode ? "fd-stage-design" : ""} ${isPanning ? "fd-stage-panning" : ""}`}>
+    <Shell>
+      <main className={`fd-page ${rightCollapsed ? "fd-right-collapsed" : ""}`}>
+        <section className="fd-factory-area">
+          <div className="fd-scale-shell">
+        <div ref={stageRef} className={`fd-stage ${designMode ? "fd-stage-design" : ""} ${isPanning ? "fd-stage-panning" : ""}`}>
           <div className="fd-design-toolbar">
             <button className={designMode ? "active" : ""} type="button" onClick={() => setDesignMode((value) => !value)}>
               {designMode ? "Sair do design" : "Modo design"}
             </button>
             <button type="button" onClick={saveCurrentLayout}>Salvar posição</button>
-            <button type="button" onClick={() => setViewportPan(clampPan({ x: 0, y: 0 }))}>Centralizar visão</button>
+            <button type="button" onClick={() => setViewportPan(clampPan({ x: 0, y: 0 }, viewportSize))}>Centralizar visão</button>
             <button type="button" onClick={resetLayout}>Resetar layout</button>
             {savedMessage && <span>{savedMessage}</span>}
           </div>
@@ -663,7 +689,38 @@ export default function FactoryDashboard() {
             <DraggableNode id="focus" layout={layout} onMove={moveNode} designMode={designMode}><FocusPanel /></DraggableNode>
           </div>
         </div>
-      </section>
-    </main>
+          </div>
+        </section>
+        <aside className="right-panel fd-side-panel">
+          <button className="panel-toggle" onClick={() => setRightCollapsed((value) => !value)} title={rightCollapsed ? "Expandir resumo" : "Recolher resumo"}>
+            {rightCollapsed ? <ChevronLeft /> : <ChevronRight />}
+          </button>
+          <div className="right-panel-content">
+            <section className="panel">
+              <h2>Resumo da Operação</h2>
+              <div className="summary-grid">
+                <div className="summary-card"><PackageCheck /><span>Concluídas</span><strong>{map.summary.done}</strong></div>
+                <div className="summary-card"><Bell /><span>Pendências</span><strong>{map.summary.pending}</strong></div>
+                <div className="summary-card"><ShieldCheck /><span>Bloqueadas</span><strong>{map.summary.blocked}</strong></div>
+                <div className="summary-card"><BarChart3 /><span>Qualidade</span><strong>{map.summary.quality}%</strong></div>
+              </div>
+            </section>
+            <section className="panel">
+              <h2>Legenda</h2>
+              <p className="legend l0"><span />Disponível</p>
+              <p className="legend l1"><span />Em andamento</p>
+              <p className="legend l2"><span />Pendente</p>
+              <p className="legend l3"><span />Concluído</p>
+            </section>
+            <section className="panel demand-card">
+              <h2>Layout da Fábrica</h2>
+              <strong>{designMode ? "Modo design ativo" : "Modo operação"}</strong>
+              <p>{designMode ? "Arraste estações e pontos de conexão." : "Arraste o chão para navegar e clique nas estações."}</p>
+              <div className="progress"><span style={{ width: `${map.summary.productivity}%` }} /></div>
+            </section>
+          </div>
+        </aside>
+      </main>
+    </Shell>
   );
 }
