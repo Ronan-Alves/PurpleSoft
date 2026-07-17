@@ -208,7 +208,6 @@ export type TaskTemplate = {
   procedureKey: string;
 };
 
-export const storageKey = "purplesoft_operation_state_v1";
 export const clientSessionKey = "purplesoft_client_session_v1";
 export const operatorTokenKey = "purplesoft_token";
 export const employees = ["Ana Souza", "Bruno Lima", "Camila Rocha", "Diego Martins", "Equipe Fiscal"];
@@ -256,7 +255,13 @@ export const taskTemplates: TaskTemplate[] = [
 export const initialOperationState: OperationState = {
   offices: [
     { id: "office-1", name: "Escritorio Alfa Contabil" },
-    { id: "office-2", name: "Martins & Rocha Consultoria" }
+    { id: "office-2", name: "Martins & Rocha Consultoria" },
+    { id: "office-3", name: "Solucoes Contabeis Horizonte" },
+    { id: "office-4", name: "Prime Gestão Empresarial" },
+    { id: "office-5", name: "Crescer Assessoria Contabil" },
+    { id: "office-6", name: "Nova Era Consultoria" },
+    { id: "office-7", name: "Vetor BPO e Contabilidade" },
+    { id: "office-8", name: "Integra Escritorios Associados" }
   ],
   customers: [
     {
@@ -288,7 +293,26 @@ export const initialOperationState: OperationState = {
       tradeName: "Horizonte",
       contacts: [{ id: "contact-3", name: "Paula Martins", role: "Diretora", phone: "(21) 97777-3300", email: "paula@horizonte.com.br" }],
       serviceInterests: ["contabil"]
-    }
+    },
+    { id: "customer-4", officeId: "office-1", legalName: "Verde Campo Produtos Naturais Ltda", tradeName: "Verde Campo", cnpj: "41.208.763/0001-05", serviceInterests: ["contabil"], contacts: [{ id: "contact-4", name: "Juliana Freitas", role: "Administradora", phone: "(11) 97777-4411", email: "juliana@verdecampo.com.br" }] },
+    { id: "customer-5", officeId: "office-1", legalName: "Metalurgica Sao Bento Ltda", tradeName: "MSB Industria", cnpj: "67.390.128/0001-20", serviceInterests: ["contabil", "pessoal"] },
+    { id: "customer-6", officeId: "office-2", legalName: "Clinica Bem Viver Ltda", tradeName: "Bem Viver", cnpj: "18.524.936/0001-64", serviceInterests: ["pessoal"], contacts: [{ id: "contact-6", name: "Carolina Nunes", role: "Gestora", phone: "(21) 98888-1212", email: "carolina@bemviver.com.br" }] },
+    { id: "customer-7", officeId: "office-2", legalName: "Rota Sul Logistica Integrada Ltda", tradeName: "Rota Sul", cnpj: "56.843.192/0001-83", serviceInterests: ["contabil", "pessoal"] },
+    { id: "customer-8", officeId: "office-2", legalName: "Atelie Casa Clara Ltda", tradeName: "Casa Clara", cnpj: "29.671.405/0001-18", serviceInterests: ["outro"], otherServiceDescription: "Gestao financeira" },
+    { id: "customer-9", officeId: "office-3", legalName: "Agropecuaria Santa Luzia Ltda", tradeName: "Santa Luzia Agro", cnpj: "74.156.239/0001-47", serviceInterests: ["contabil", "pessoal"] },
+    { id: "customer-10", officeId: "office-3", legalName: "Ponto Certo Comercio de Roupas Ltda", tradeName: "Ponto Certo", cnpj: "35.902.671/0001-09", serviceInterests: ["contabil"] },
+    { id: "customer-11", officeId: "office-3", legalName: "Construtora Pedra Alta Ltda", tradeName: "Pedra Alta", cnpj: "63.218.457/0001-76", serviceInterests: ["pessoal"] },
+    { id: "customer-12", officeId: "office-4", legalName: "Educa Mais Cursos Livres Ltda", tradeName: "Educa Mais", cnpj: "15.847.320/0001-38", serviceInterests: ["contabil", "pessoal"] },
+    { id: "customer-13", officeId: "office-4", legalName: "Brava Comunicacao Digital Ltda", tradeName: "Brava Digital", cnpj: "48.391.625/0001-91", serviceInterests: ["contabil"] },
+    { id: "customer-14", officeId: "office-4", legalName: "Mercado Boa Compra Ltda", tradeName: "Boa Compra", cnpj: "26.735.184/0001-52", serviceInterests: ["contabil", "pessoal"] },
+    { id: "customer-15", officeId: "office-5", legalName: "Fabrica de Moveis Nobre Ltda", tradeName: "Moveis Nobre", cnpj: "59.124.867/0001-36", serviceInterests: ["contabil"] },
+    { id: "customer-16", officeId: "office-5", legalName: "Sabor da Serra Restaurante Ltda", tradeName: "Sabor da Serra", cnpj: "32.680.419/0001-75", serviceInterests: ["contabil", "pessoal"] },
+    { id: "customer-17", officeId: "office-6", legalName: "Orbita Sistemas Empresariais Ltda", tradeName: "Orbita Sistemas", cnpj: "71.493.208/0001-62", serviceInterests: ["pessoal"] },
+    { id: "customer-18", officeId: "office-6", legalName: "Lavanderia Central Express Ltda", tradeName: "Central Express", cnpj: "24.518.697/0001-14", serviceInterests: ["contabil"] },
+    { id: "customer-19", officeId: "office-7", legalName: "Alpha Servicos de Engenharia Ltda", tradeName: "Alpha Engenharia", cnpj: "46.702.831/0001-40", serviceInterests: ["contabil", "pessoal"] },
+    { id: "customer-20", officeId: "office-7", legalName: "Doces da Vila Industria Ltda", tradeName: "Doces da Vila", cnpj: "19.865.204/0001-87", serviceInterests: ["outro"], otherServiceDescription: "BPO financeiro" },
+    { id: "customer-21", officeId: "office-8", legalName: "Grupo Litoral Comercio e Servicos Ltda", tradeName: "Grupo Litoral", cnpj: "68.247.915/0001-23", serviceInterests: ["contabil"] },
+    { id: "customer-22", officeId: "office-8", legalName: "Instituto Novo Caminho Ltda", tradeName: "Novo Caminho", cnpj: "37.591.426/0001-68", serviceInterests: ["pessoal"] }
   ],
   demands: [
     {
@@ -388,22 +412,42 @@ export function normalizeOperationState(state: OperationState): OperationState {
 }
 
 export function loadOperationState(): OperationState {
-  const stored = localStorage.getItem(storageKey);
-  if (!stored) return initialOperationState;
-  try {
-    return normalizeOperationState(JSON.parse(stored) as OperationState);
-  } catch {
-    return initialOperationState;
-  }
+  return {
+    offices: [],
+    customers: [],
+    demands: [],
+    tasks: [],
+    procedures: [],
+    stationSeconds: {},
+    clientAccesses: [],
+    clientPendings: []
+  };
 }
 
 export function useOperationState() {
   const [state, setState] = useState<OperationState>(() => loadOperationState());
 
+  useEffect(() => {
+    async function loadRegistrationsFromApi() {
+      try {
+        const [officesResponse, customersResponse] = await Promise.all([
+          fetch(`${API_URL}/offices`, { headers: authHeaders() }),
+          fetch(`${API_URL}/customers`, { headers: authHeaders() })
+        ]);
+        if (!officesResponse.ok || !customersResponse.ok) return;
+        const offices = await officesResponse.json() as { offices: Office[] };
+        const customers = await customersResponse.json() as { customers: Customer[] };
+        setState((current) => ({ ...current, offices: offices.offices, customers: customers.customers }));
+      } catch {
+        // A tela continua com o estado inicial quando a API ainda nao estiver disponivel.
+      }
+    }
+    void loadRegistrationsFromApi();
+  }, []);
+
   const commit = useCallback((updater: (current: OperationState) => OperationState) => {
     setState((current) => {
       const next = updater(current);
-      localStorage.setItem(storageKey, JSON.stringify(next));
       return next;
     });
   }, []);

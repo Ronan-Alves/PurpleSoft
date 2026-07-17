@@ -40,10 +40,14 @@ from .schemas import (
     ClientPendingOut,
     CustomerBasicRegistrationIn,
     CustomerBasicRegistrationOut,
+    CustomersOut,
     CustomerOut,
     LoginRequest,
     LoginResponse,
     OperationMap,
+    OfficeIn,
+    OfficeOut,
+    OfficesOut,
     TaskOut,
     WorkAreaOut,
 )
@@ -327,6 +331,42 @@ def login(payload: LoginRequest) -> LoginResponse:
 
     token = make_token(payload.email, "operator")
     return LoginResponse(access_token=token, name="Gerente Operacional", role="Operacao")
+
+
+@app.get("/offices", response_model=OfficesOut)
+def list_offices(
+    operator: dict[str, str] = Depends(require_operator),
+    db: Session = Depends(get_db),
+) -> OfficesOut:
+    offices = db.scalars(select(Office).order_by(Office.name)).all()
+    return OfficesOut(offices=[OfficeOut(id=office.id, name=office.name) for office in offices])
+
+
+@app.post("/offices", response_model=OfficeOut, status_code=201)
+def create_office(
+    payload: OfficeIn,
+    operator: dict[str, str] = Depends(require_operator),
+    db: Session = Depends(get_db),
+) -> OfficeOut:
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Informe o nome do escritorio.")
+    if db.scalar(select(Office).where(Office.name == name)):
+        raise HTTPException(status_code=409, detail="Este escritorio ja esta cadastrado.")
+    office = Office(id=make_id("office"), name=name)
+    db.add(office)
+    add_audit_log(db, operator, "create", "office", office.id, None, {"name": office.name})
+    db.commit()
+    return OfficeOut(id=office.id, name=office.name)
+
+
+@app.get("/customers", response_model=CustomersOut)
+def list_customers(
+    operator: dict[str, str] = Depends(require_operator),
+    db: Session = Depends(get_db),
+) -> CustomersOut:
+    customers = db.scalars(select(Customer).order_by(Customer.legal_name)).all()
+    return CustomersOut(customers=[customer_to_out(customer) for customer in customers])
 
 
 @app.post("/customers/basic-registration", response_model=CustomerBasicRegistrationOut)

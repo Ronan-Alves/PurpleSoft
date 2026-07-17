@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class LoginRequest(BaseModel):
@@ -47,6 +47,19 @@ class CustomerContactIn(BaseModel):
     email: str
 
 
+class OfficeIn(BaseModel):
+    name: str
+
+
+class OfficeOut(BaseModel):
+    id: str
+    name: str
+
+
+class OfficesOut(BaseModel):
+    offices: list[OfficeOut]
+
+
 class CustomerBasicRegistrationIn(BaseModel):
     officeName: str
     legalName: str
@@ -56,7 +69,7 @@ class CustomerBasicRegistrationIn(BaseModel):
     contractCityState: str | None = None
     contractEmail: str | None = None
     contacts: list[CustomerContactIn] = []
-    serviceInterests: list[str] = []
+    serviceInterests: list[str] = Field(min_length=1)
     otherServiceDescription: str | None = None
 
 
@@ -72,6 +85,10 @@ class CustomerOut(BaseModel):
     contacts: list[CustomerContactIn] = []
     serviceInterests: list[str] = []
     otherServiceDescription: str | None = None
+
+
+class CustomersOut(BaseModel):
+    customers: list[CustomerOut]
 
 
 class ClientAccessOut(BaseModel):

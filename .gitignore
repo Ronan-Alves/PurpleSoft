@@ -9,3 +9,4 @@ build/
 *.log
 *.tsbuildinfo
 postgres_data/
+backend/.postgres-data/

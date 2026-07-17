@@ -2,6 +2,51 @@
 
 Este arquivo resume as informacoes importantes para rodar, acessar e entender o MVP do PurpleSoft.
 
+## Inicio Rapido Sem Docker
+
+Use estes três terminais, nesta ordem. O banco local do PurpleSoft roda separado da instalação global do PostgreSQL.
+
+### Terminal 1 — Banco de dados
+
+```bash
+cd /Users/ronanalves/PlusTech/PurpleBPO/PurpleSoft
+/Library/PostgreSQL/18/bin/pg_ctl -D backend/.postgres-data -l backend/purplesoft-postgres.log -o '-p 5438 -h 127.0.0.1' start
+```
+
+### Terminal 2 — API
+
+```bash
+cd /Users/ronanalves/PlusTech/PurpleBPO/PurpleSoft/backend
+source .venv/bin/activate
+alembic upgrade head
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8088
+```
+
+### Terminal 3 — Aplicação
+
+```bash
+cd /Users/ronanalves/PlusTech/PurpleBPO/PurpleSoft/frontend
+npm run dev -- --host 127.0.0.1 --port 5178
+```
+
+Acesse `http://localhost:5178`.
+
+### Dados de acesso do banco local
+
+- Host: `127.0.0.1`
+- Porta: `5438`
+- Banco: `purplesoft`
+- Usuário: `purplesoft`
+- Senha: `purplesoft`
+- URL SQLAlchemy: `postgresql+psycopg://purplesoft:purplesoft@localhost:5438/purplesoft`
+- URL para DBeaver/TablePlus: `postgresql://purplesoft:purplesoft@localhost:5438/purplesoft`
+
+Para parar somente o banco local do PurpleSoft:
+
+```bash
+/Library/PostgreSQL/18/bin/pg_ctl -D /Users/ronanalves/PlusTech/PurpleBPO/PurpleSoft/backend/.postgres-data stop
+```
+
 ## Visao Geral
 
 O PurpleSoft e um MVP para transformar a operacao de um BPO em uma linha de producao visual. A tela principal mostra uma esteira com estacoes clicaveis. Cada estacao abre uma tela propria para receber, no futuro, tarefas, ferramentas, manuais, indicadores e controles do departamento.
@@ -68,6 +113,15 @@ npm run dev -- --host 127.0.0.1 --port 5178
 
 ### Backend
 
+Nesta máquina há uma instância PostgreSQL exclusiva do PurpleSoft em `backend/.postgres-data`, na porta `5438`. Inicie o banco antes do backend:
+
+```bash
+cd /Users/ronanalves/PlusTech/PurpleBPO/PurpleSoft
+/Library/PostgreSQL/18/bin/pg_ctl -D backend/.postgres-data -l backend/purplesoft-postgres.log -o '-p 5438 -h 127.0.0.1' start
+```
+
+Se o comando informar que o servidor já está rodando, prossiga normalmente.
+
 Crie e ative um ambiente Python:
 
 ```bash
@@ -76,10 +130,10 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 alembic upgrade head
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8088
 ```
 
-Sem Docker, o backend espera o Postgres em:
+Sem Docker, a conexão usada pelo backend é:
 
 ```text
 postgresql+psycopg://purplesoft:purplesoft@localhost:5438/purplesoft
@@ -118,7 +172,7 @@ A planta foi preparada como uma area maior que a tela visivel. Isso permite incl
 
 ## Fluxo Operacional do MVP
 
-O MVP agora usa um cenario ficticio salvo no `localStorage` do navegador. A estrutura principal e:
+Os cadastros de escritorios e empresas sao persistidos no PostgreSQL e carregados pela API ao abrir a tela. A estrutura principal e:
 
 - Escritorio: quem atende o cliente final.
 - Cliente: empresa com razao social e CNPJ.
@@ -141,13 +195,7 @@ Fluxo esperado:
 9. Ao concluir uma tarefa, o sistema pergunta se deve seguir para a proxima tarefa da mesma estacao ou para a proxima tarefa da mesma demanda.
 10. Na Entrega Final, a demanda mostra quantas tarefas existiam e quantas foram concluidas.
 
-Para reiniciar o cenario ficticio do navegador:
-
-```js
-localStorage.removeItem("purplesoft_operation_state_v1")
-```
-
-Depois recarregue a pagina.
+O banco local e iniciado com uma massa demonstrativa de 8 escritorios e 20 empresas ficticias, criada apenas quando ainda nao houver escritorios cadastrados.
 
 ## Banco Postgres
 
