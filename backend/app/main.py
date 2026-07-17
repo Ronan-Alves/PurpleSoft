@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 import json
+from pathlib import Path
 from secrets import token_urlsafe
 from unicodedata import normalize
 from uuid import uuid4
@@ -7,6 +8,7 @@ from uuid import uuid4
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.responses import FileResponse
 from jose import jwt
 from jose.exceptions import JWTError
 from passlib.context import CryptContext
@@ -23,6 +25,7 @@ from .models import (
     CustomerContact,
     CustomerServiceInterest,
     Office,
+    PersonnelSettings,
     Task,
     WorkArea,
 )
@@ -48,6 +51,8 @@ from .schemas import (
     OfficeIn,
     OfficeOut,
     OfficesOut,
+    PersonnelSettingsIn,
+    PersonnelSettingsOut,
     TaskOut,
     WorkAreaOut,
 )
@@ -57,6 +62,7 @@ from .settings import settings
 app = FastAPI(title="PurpleSoft API", version="0.1.0")
 bearer_scheme = HTTPBearer(auto_error=False)
 password_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+project_root = Path(__file__).resolve().parents[2]
 
 app.add_middleware(
     CORSMiddleware,
@@ -322,6 +328,15 @@ def on_startup() -> None:
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/manuals/admission-required-documents")
+def admission_required_documents_manual(download: bool = False) -> FileResponse:
+    path = project_root / "docs" / "Parametros base" / "DOCUMENTAÇÃO NECESSÁRIA PARA ADMISSÃO.pdf"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Manual nao localizado.")
+    disposition = "attachment" if download else "inline"
+    return FileResponse(path, media_type="application/pdf", headers={"Content-Disposition": f'{disposition}; filename="manual-admissao.pdf"'})
 
 
 @app.post("/auth/login", response_model=LoginResponse)
@@ -701,6 +716,45 @@ def bulk_update_accounting_companies(
     for company in companies:
         db.refresh(company)
     return AccountingClientCompaniesOut(companies=[accounting_company_to_out(company) for company in companies])
+
+
+def personnel_settings_to_out(settings_row: PersonnelSettings) -> PersonnelSettingsOut:
+    return PersonnelSettingsOut(
+        admissionSlaDays=settings_row.admission_sla_days,
+        terminationSlaDays=settings_row.termination_sla_days,
+        vacationSlaDays=settings_row.vacation_sla_days,
+        payrollDueDay=settings_row.payroll_due_day,
+        criticalStartDay=settings_row.critical_start_day,
+        criticalEndDay=settings_row.critical_end_day,
+        warningDays=settings_row.warning_days,
+    )
+
+
+@app.get("/personnel-settings", response_model=PersonnelSettingsOut)
+def get_personnel_settings(_: dict[str, str] = Depends(require_operator), db: Session = Depends(get_db)) -> PersonnelSettingsOut:
+    settings_row = db.get(PersonnelSettings, "default")
+    if not settings_row:
+        settings_row = PersonnelSettings(id="default")
+        db.add(settings_row)
+        db.commit()
+        db.refresh(settings_row)
+    return personnel_settings_to_out(settings_row)
+
+
+@app.put("/personnel-settings", response_model=PersonnelSettingsOut)
+def update_personnel_settings(payload: PersonnelSettingsIn, _: dict[str, str] = Depends(require_operator), db: Session = Depends(get_db)) -> PersonnelSettingsOut:
+    settings_row = db.get(PersonnelSettings, "default") or PersonnelSettings(id="default")
+    settings_row.admission_sla_days = payload.admissionSlaDays
+    settings_row.termination_sla_days = payload.terminationSlaDays
+    settings_row.vacation_sla_days = payload.vacationSlaDays
+    settings_row.payroll_due_day = payload.payrollDueDay
+    settings_row.critical_start_day = payload.criticalStartDay
+    settings_row.critical_end_day = payload.criticalEndDay
+    settings_row.warning_days = payload.warningDays
+    db.add(settings_row)
+    db.commit()
+    db.refresh(settings_row)
+    return personnel_settings_to_out(settings_row)
 
 
 @app.get("/operation-map", response_model=OperationMap)

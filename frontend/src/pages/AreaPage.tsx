@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, BarChart3, Boxes, Building2, CheckCircle2, CircleHelp, ClipboardList, FileText, GitBranch, PackageCheck, Play, PlayCircle, Plus, Save, Timer, UsersRound, WalletCards } from "lucide-react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { ArrowLeft, BarChart3, Boxes, Building2, CheckCircle2, CircleHelp, ClipboardList, FileText, GitBranch, PackageCheck, Play, PlayCircle, Plus, Save, Timer, Upload, UsersRound, WalletCards } from "lucide-react";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import Shell from "../components/Shell";
 import { API_URL, authHeaders, clientSessionKey, customerName, demandProgress, departmentCatalog, employees, formatDuration, officeName, taskTemplates, uniqueId, useOperationMap, useOperationState } from "../app/shared";
 import type { ClientAccess, ClientPending, Customer, CustomerBasicRegistrationResponse, CustomerContact, Demand, OperationState, OperationTask, Priority, ServiceInterest, TaskStatus } from "../app/shared";
@@ -521,48 +521,79 @@ function DepartmentArea({ departmentId, store }: { departmentId: "contabil" | "p
   const { state } = store;
   const department = departmentCatalog[departmentId];
   const map = useOperationMap();
+  const [accountingAssigneeFilter, setAccountingAssigneeFilter] = useState("todos");
+  const [personnelSettings, setPersonnelSettings] = useState({ admissionSlaDays: 1, terminationSlaDays: 2, vacationSlaDays: 3, payrollDueDay: 25, criticalStartDay: 20, criticalEndDay: 25, warningDays: 1 });
+  const [settingsSaved, setSettingsSaved] = useState("");
+
+  useEffect(() => {
+    if (departmentId !== "pessoal") return;
+    fetch(`${API_URL}/personnel-settings`, { headers: authHeaders() }).then((response) => response.ok ? response.json() : null).then((body) => body && setPersonnelSettings(body)).catch(() => undefined);
+  }, [departmentId]);
+
+  async function savePersonnelSettings() {
+    const response = await fetch(`${API_URL}/personnel-settings`, { method: "PUT", headers: authHeaders({ "Content-Type": "application/json" }), body: JSON.stringify(personnelSettings) });
+    setSettingsSaved(response.ok ? "Configuracoes salvas." : "Nao foi possivel salvar.");
+  }
+
+  if (departmentId === "contabil") {
+    const accountingTasks = map.tasks.filter((task) => task.area_id === "contabil" && task.title === "Folha contabil mensal");
+    const assignees = Array.from(new Set(accountingTasks.map((task) => task.assignee).filter((value): value is string => Boolean(value)))).sort();
+    const filteredTasks = accountingTasks
+      .filter((task) => accountingAssigneeFilter === "todos" || (accountingAssigneeFilter === "sem_responsavel" ? !task.assignee : task.assignee === accountingAssigneeFilter))
+      .sort((a, b) => ({ critica: 0, alta: 1, normal: 2, baixa: 3 }[a.priority] ?? 4) - ({ critica: 0, alta: 1, normal: 2, baixa: 3 }[b.priority] ?? 4));
+    const officeProgress = state.offices.map((office) => {
+      const companies = state.customers.filter((customer) => customer.officeId === office.id && customer.serviceInterests?.includes("contabil"));
+      const tasks = accountingTasks.filter((task) => companies.some((customer) => [customer.tradeName, customer.legalName].includes(task.client_name)));
+      return { office, total: companies.length, done: tasks.filter((task) => task.status === "done").length };
+    }).filter((item) => item.total > 0);
+    return (
+      <AreaFrame title="Departamento Contabil" subtitle="Acompanhe as folhas por escritorio e organize a fila geral de prioridade do setor." icon={<Boxes />} smallHeader>
+        <section className="accounting-overview">
+          <section className="ops-panel"><div className="customer-list-header"><div><h3>Progresso por escritorio</h3><small>Folhas de todas as empresas com servico contabil</small></div></div><div className="office-progress-list">{officeProgress.map(({ office, total, done }) => { const missing = Math.max(total - done, 0); return <article key={office.id}><div><strong>{office.name}</strong><small>{done} de {total} folhas concluidas</small></div><div className="office-progress-bar"><span style={{ width: `${total ? (done / total) * 100 : 0}%` }} /></div><strong className={missing ? "missing" : "complete"}>{missing} faltando</strong></article>; })}</div></section>
+          <section className="ops-panel accounting-priority"><div className="customer-list-header"><div><h3>Fila geral de prioridade</h3><small>{filteredTasks.length} folhas no filtro atual</small></div><label className="inline-filter">Responsavel<select value={accountingAssigneeFilter} onChange={(event) => setAccountingAssigneeFilter(event.target.value)}><option value="todos">Todos</option><option value="sem_responsavel">Sem responsavel</option>{assignees.map((assignee) => <option key={assignee} value={assignee}>{assignee}</option>)}</select></label></div><div className="company-table-wrap"><table className="company-table accounting-queue"><thead><tr><th>Prioridade</th><th>Empresa</th><th>Responsavel</th><th>Status</th></tr></thead><tbody>{filteredTasks.map((task) => <tr key={task.id}><td><span className={`priority-badge ${task.priority}`}>{task.priority}</span></td><td><strong>{task.client_name}</strong></td><td>{task.assignee ?? <span className="unassigned">Sem responsavel</span>}</td><td>{task.status}</td></tr>)}</tbody></table></div></section>
+        </section>
+      </AreaFrame>
+    );
+  }
 
   if (departmentId === "pessoal") {
-    const personnelTasks = map.tasks.filter((task) => task.area_id === "pessoal");
-    const stationForTask = (title: string) => {
-      const normalized = title.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-      if (normalized.includes("rescis")) return "rescisoes";
-      if (normalized.includes("ferias")) return "ferias";
-      if (normalized.includes("folha")) return "folha";
-      return "admissoes";
+    const personnelTasks = map.tasks.filter((task) => task.area_id === "pessoal" && task.station_id);
+    const now = new Date();
+    const criticalPeriod = now.getDate() >= personnelSettings.criticalStartDay && now.getDate() <= personnelSettings.criticalEndDay;
+    const deadlineFor = (task: typeof personnelTasks[number], stationId: string) => {
+      if (stationId === "folha") return new Date(now.getFullYear(), now.getMonth(), personnelSettings.payrollDueDay, 23, 59, 59);
+      const sla = stationId === "admissoes" ? personnelSettings.admissionSlaDays : stationId === "rescisoes" ? personnelSettings.terminationSlaDays : personnelSettings.vacationSlaDays;
+      const date = new Date(`${task.requested_at ?? now.toISOString().slice(0, 10)}T23:59:59`);
+      date.setDate(date.getDate() + sla);
+      return date;
     };
-    const countStatus = (statuses: string[]) => personnelTasks.filter((task) => statuses.includes(task.status)).length;
-    const statusLabel: Record<string, string> = {
-      waiting_release: "Aguardando liberacao",
-      waiting: "Aguardando",
-      done_waiting: "Concluida, aguardando pecas",
-      running: "Em execucao",
-      pending: "Pendente",
-      attention: "Prioridade",
-      done: "Concluida"
-    };
+    const daysToDeadline = (task: typeof personnelTasks[number], stationId: string) => Math.ceil((deadlineFor(task, stationId).getTime() - now.getTime()) / 86400000);
+    const openPersonnelTasks = personnelTasks.filter((task) => task.status !== "done");
+    const globalChecklistPending = openPersonnelTasks.filter((task) => !task.checklist_ready).length;
+    const globalAvailable = openPersonnelTasks.filter((task) => task.checklist_ready && task.status === "pending").length;
+    const globalWarning = openPersonnelTasks.filter((task) => task.checklist_ready && daysToDeadline(task, task.station_id!) >= 0 && daysToDeadline(task, task.station_id!) <= personnelSettings.warningDays).length;
+    const globalOverdue = openPersonnelTasks.filter((task) => task.checklist_ready && daysToDeadline(task, task.station_id!) < 0).length;
     return (
       <AreaFrame title="Departamento Pessoal" subtitle="Visao fabril das filas, prioridades e liberacoes de cada linha de producao." icon={<UsersRound />} smallHeader>
         <section className="personnel-summary">
-          <article><ClipboardList /><span>Total no setor</span><strong>{personnelTasks.length}</strong></article>
-          <article><Timer /><span>Pendentes</span><strong>{countStatus(["pending", "attention", "waiting"])}</strong></article>
-          <article><CheckCircle2 /><span>Concluidas aguardando pecas</span><strong>{countStatus(["done_waiting"])}</strong></article>
-          <article><PlayCircle /><span>Aguardando liberacao</span><strong>{countStatus(["waiting_release"])}</strong></article>
+          <article><ClipboardList /><span>Checklist pendente</span><strong>{globalChecklistPending}</strong></article>
+          <article><CheckCircle2 /><span>Liberadas</span><strong>{globalAvailable}</strong></article>
+          <article><Timer /><span>Proximas do prazo</span><strong>{globalWarning}</strong></article>
+          <article><PlayCircle /><span>Atrasadas</span><strong>{globalOverdue}</strong></article>
         </section>
-        <section className="personnel-factory">
+        {criticalPeriod && <div className="closing-alert"><strong>Periodo critico de fechamento ativo</strong><span>As tarefas do Departamento Pessoal devem receber prioridade reforcada ate o dia {personnelSettings.criticalEndDay}.</span></div>}
+        <details className="personnel-settings-panel"><summary>Configurar prazos e periodo critico</summary><div className="settings-grid"><label>Admissao (dias)<input type="number" min="1" value={personnelSettings.admissionSlaDays} onChange={(event) => setPersonnelSettings({ ...personnelSettings, admissionSlaDays: Number(event.target.value) })} /></label><label>Rescisao (dias)<input type="number" min="1" value={personnelSettings.terminationSlaDays} onChange={(event) => setPersonnelSettings({ ...personnelSettings, terminationSlaDays: Number(event.target.value) })} /></label><label>Ferias (dias)<input type="number" min="1" value={personnelSettings.vacationSlaDays} onChange={(event) => setPersonnelSettings({ ...personnelSettings, vacationSlaDays: Number(event.target.value) })} /></label><label>Fechar folha ate o dia<input type="number" min="1" max="31" value={personnelSettings.payrollDueDay} onChange={(event) => setPersonnelSettings({ ...personnelSettings, payrollDueDay: Number(event.target.value) })} /></label><label>Inicio periodo critico<input type="number" min="1" max="31" value={personnelSettings.criticalStartDay} onChange={(event) => setPersonnelSettings({ ...personnelSettings, criticalStartDay: Number(event.target.value) })} /></label><label>Fim periodo critico<input type="number" min="1" max="31" value={personnelSettings.criticalEndDay} onChange={(event) => setPersonnelSettings({ ...personnelSettings, criticalEndDay: Number(event.target.value) })} /></label><label>Alertar antes (dias)<input type="number" min="0" value={personnelSettings.warningDays} onChange={(event) => setPersonnelSettings({ ...personnelSettings, warningDays: Number(event.target.value) })} /></label><button type="button" onClick={savePersonnelSettings}><Save size={16} /> Salvar configuracoes</button>{settingsSaved && <span>{settingsSaved}</span>}</div></details>
+        <section className="personnel-alert-lanes">
           {department.stations.map((station) => {
-            const tasks = personnelTasks.filter((task) => stationForTask(task.title) === station.id);
-            const priorityCount = tasks.filter((task) => ["attention", "waiting_release"].includes(task.status)).length;
+            const tasks = personnelTasks.filter((task) => task.station_id === station.id);
+            const openTasks = tasks.filter((task) => task.status !== "done");
+            const overdue = openTasks.filter((task) => task.checklist_ready && daysToDeadline(task, station.id) < 0).length;
+            const warning = openTasks.filter((task) => task.checklist_ready && daysToDeadline(task, station.id) >= 0 && daysToDeadline(task, station.id) <= personnelSettings.warningDays).length;
+            const blocked = openTasks.filter((task) => !task.checklist_ready).length;
+            const available = openTasks.filter((task) => task.checklist_ready && task.status === "pending").length;
+            const nearest = openTasks.filter((task) => task.checklist_ready).sort((a, b) => daysToDeadline(a, station.id) - daysToDeadline(b, station.id))[0];
             return (
-              <Link className="personnel-lane" to={`/area/pessoal/station/${station.id}`} key={station.id}>
-                <header><div><span className="machine-light" /><strong>{station.title}</strong></div><small>{tasks.length} demandas</small></header>
-                <div className="lane-metrics"><span>{tasks.filter((task) => task.status === "pending").length} pendentes</span><span>{tasks.filter((task) => task.status === "done_waiting").length} aguardando pecas</span><span>{tasks.filter((task) => task.status === "waiting_release").length} para liberar</span></div>
-                <div className="lane-task-list">
-                  {tasks.slice(0, 4).map((task) => <article key={task.id}><div><strong>{task.title}</strong><small>{task.client_name}</small></div><span className={`factory-status ${task.status}`}>{statusLabel[task.status] ?? task.status}</span></article>)}
-                  {tasks.length === 0 && <p>Nenhuma demanda nesta linha.</p>}
-                </div>
-                <footer><span>{priorityCount > 0 ? `${priorityCount} item(ns) exigem atencao` : "Fluxo normal"}</span><strong>Entrar na esteira →</strong></footer>
-              </Link>
+              <Link className={`personnel-alert-card ${overdue ? "danger" : warning ? "warning" : "normal"}`} to={`/area/pessoal/station/${station.id}`} key={station.id}><header><div><span className="machine-light" /><strong>{station.title}</strong></div><span>{tasks.length} solicitacoes</span></header><div className="alert-numbers"><div className="locked"><strong>{blocked}</strong><span>checklist pendente</span></div><div className="available"><strong>{available}</strong><span>liberadas</span></div><div className="warning"><strong>{warning}</strong><span>proximas do prazo</span></div><div className="danger"><strong>{overdue}</strong><span>atrasadas</span></div></div><footer><span>{station.id === "folha" ? `Prazo mensal: dia ${personnelSettings.payrollDueDay}` : nearest ? `Proximo prazo em ${Math.max(daysToDeadline(nearest, station.id), 0)} dia(s)` : "Sem prazo pendente"}</span><strong>Ver fila da esteira →</strong></footer></Link>
             );
           })}
         </section>
@@ -590,8 +621,93 @@ function DepartmentArea({ departmentId, store }: { departmentId: "contabil" | "p
   );
 }
 
+function AdmissionWorkstationPage() {
+  const map = useOperationMap();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tasks = map.tasks.filter((task) => task.area_id === "pessoal" && task.station_id === "admissoes");
+  const [selectedTaskId, setSelectedTaskId] = useState<number | null>(tasks[0]?.id ?? null);
+  const [documents, setDocuments] = useState<Record<string, File>>({});
+  const [released, setReleased] = useState(false);
+  const [form, setForm] = useState({ employee: "", admissionDate: "", role: "", salary: "", startTime: "", endTime: "", breakStart: "", breakEnd: "", weeklyRest: "", phone: "", race: "", probation: "", maritalStatus: "", reservistRequired: false, driver: false, childDependent: false, email: "", education: "", overtime: "", transport: "", healthPlan: "", specialNotes: "" });
+  const selectedTask = tasks.find((task) => task.id === selectedTaskId);
+  useEffect(() => { if (selectedTaskId === null && tasks[0]) setSelectedTaskId(tasks[0].id); }, [selectedTaskId, tasks]);
+  const requiredDocuments = [
+    ["cpf", "CPF", true], ["identity", "Carteira de identidade", true], ["voter", "Titulo de eleitor", true],
+    ["reservist", "Certificado de reservista", form.reservistRequired], ["aso", "Atestado de saude ocupacional (ASO)", true],
+    ["address", "Comprovante de residencia", true], ["license", "Carteira de habilitacao", form.driver],
+    ["children", "Certidao de nascimento e CPF dos filhos", form.childDependent]
+  ] as const;
+  const optionalDocuments = ["Certidao de casamento/divorcio e CPF do conjuge", "Caderneta de vacinacao dos filhos", "Comprovante de escolaridade dos dependentes", "Declaracao escolar do menor estudante"];
+  const activeRequiredDocuments = requiredDocuments.filter((item) => item[2]);
+  const requiredFields = [form.employee, form.admissionDate, form.role, form.salary, form.startTime, form.endTime, form.breakStart, form.breakEnd, form.weeklyRest, form.phone, form.race, form.probation, form.maritalStatus];
+  const completedDocuments = activeRequiredDocuments.filter(([id]) => documents[id]).length;
+  const completedFields = requiredFields.filter(Boolean).length;
+  const totalRequired = activeRequiredDocuments.length + requiredFields.length;
+  const completedRequired = completedDocuments + completedFields;
+  const canRelease = completedRequired === totalRequired;
+
+  function canPreviewDocument(file: File) {
+    return file.type === "application/pdf" || file.type.startsWith("image/") || file.type.startsWith("text/");
+  }
+
+  function openDocument(documentId: string) {
+    const file = documents[documentId];
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    if (canPreviewDocument(file)) {
+      window.open(url, "_blank", "noopener,noreferrer");
+    } else {
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = file.name;
+      link.click();
+    }
+    window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+  }
+
+  function field(name: keyof typeof form, label: string, type = "text") {
+    return <label>{label}<input type={type} value={String(form[name])} onChange={(event) => setForm({ ...form, [name]: event.target.value })} required /></label>;
+  }
+
+  if (searchParams.get("view") === "manuals") {
+    return <AdmissionManualsPage onBack={() => setSearchParams({})} />;
+  }
+
+  return (
+    <AreaFrame title="Esteira de Admissoes" subtitle="Documentos e dados obrigatorios conforme o checklist de admissao enviado pelo escritorio." icon={<UsersRound />} smallHeader>
+      <section className="admission-layout">
+        <aside className="ops-panel admission-requests"><h3>Solicitacoes</h3>{tasks.map((task) => <button className={selectedTaskId === task.id ? "active" : ""} type="button" key={task.id} onClick={() => { setSelectedTaskId(task.id); setReleased(false); }}><strong>{task.client_name}</strong><span className={`checklist-status ${task.checklist_ready ? "ready" : "missing"}`}>{task.checklist_ready ? "Checklist informado" : "Aguardando checklist"}</span></button>)}</aside>
+        <main className="admission-checklist">
+          <section className="ops-panel admission-progress"><div><h3>{selectedTask?.client_name ?? "Selecione uma solicitacao"}</h3><small>{completedRequired} de {totalRequired} itens obrigatorios preenchidos</small></div><div className="office-progress-bar"><span style={{ width: `${totalRequired ? completedRequired / totalRequired * 100 : 0}%` }} /></div><strong>{Math.round(totalRequired ? completedRequired / totalRequired * 100 : 0)}%</strong></section>
+          <section className="admission-manual-shortcut"><div><FileText size={22} /><span><strong>Manuais da tarefa</strong><small>Consulte documentos e orientacoes para realizar esta admissao.</small></span></div><Link to="?view=manuals">Abrir manuais →</Link></section>
+          <section className="ops-panel"><h3>Documentos obrigatorios</h3><div className="admission-document-grid">{requiredDocuments.map(([id, label, required]) => { const file = documents[id]; return <label className={`${!required ? "conditional-inactive" : ""} ${file ? "has-file" : ""}`} key={id}><div><strong>{label}</strong><span>{file ? file.name : required ? "Obrigatorio" : "Condicional"}</span>{file && <button type="button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); openDocument(id); }}>{canPreviewDocument(file) ? "Visualizar" : "Baixar arquivo"}</button>}</div><input type="file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.odt" disabled={!required} onChange={(event) => { const selectedFile = event.target.files?.[0]; if (selectedFile) setDocuments({ ...documents, [id]: selectedFile }); }} /><Upload size={18} /></label>; })}</div><div className="admission-conditions"><label><input type="checkbox" checked={form.reservistRequired} onChange={(event) => setForm({ ...form, reservistRequired: event.target.checked })} /> Homem entre 18 e 45 anos</label><label><input type="checkbox" checked={form.driver} onChange={(event) => setForm({ ...form, driver: event.target.checked })} /> Exerce funcao de motorista</label><label><input type="checkbox" checked={form.childDependent} onChange={(event) => setForm({ ...form, childDependent: event.target.checked })} /> Possui filhos dependentes</label></div><details className="company-extra-fields"><summary>Documentos opcionais</summary><div className="admission-document-grid optional">{optionalDocuments.map((label) => <label key={label}><div><strong>{label}</strong><span>Opcional</span></div><input type="file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.odt" /><Upload size={18} /></label>)}</div></details></section>
+          <section className="ops-panel admission-form"><h3>Informacoes obrigatorias da contratacao</h3><div className="form-grid">{field("admissionDate", "Data de admissao", "date")}{field("employee", "Nome do funcionario")}{field("role", "Cargo")}{field("salary", "Salario")}{field("startTime", "Inicio do horario", "time")}{field("endTime", "Fim do horario", "time")}{field("breakStart", "Inicio do intervalo", "time")}{field("breakEnd", "Fim do intervalo", "time")}{field("weeklyRest", "Descanso semanal / dia da folga")}{field("phone", "Telefone de contato")}{field("race", "Raca/cor")}{field("probation", "Contrato de experiencia")}{field("maritalStatus", "Estado civil")}</div><details className="company-extra-fields"><summary>Informacoes opcionais</summary><div className="form-grid">{field("email", "E-mail")}{field("education", "Grau de instrucao")}{field("overtime", "Tratamento das horas extras")}{field("transport", "Vale-transporte")}{field("healthPlan", "Plano de saude")}<label className="wide">Informacoes especiais<textarea value={form.specialNotes} onChange={(event) => setForm({ ...form, specialNotes: event.target.value })} /></label></div></details></section>
+          <section className={`admission-release ${canRelease ? "ready" : "blocked"}`}><div><strong>{released ? "Admissao liberada para execucao" : canRelease ? "Checklist completo" : "Liberacao bloqueada"}</strong><span>{canRelease ? "Todos os documentos e dados obrigatorios foram informados." : `Faltam ${totalRequired - completedRequired} item(ns) obrigatorio(s).`}</span></div><button type="button" disabled={!canRelease || released} onClick={() => setReleased(true)}><CheckCircle2 size={18} /> Liberar admissao</button></section>
+        </main>
+      </section>
+    </AreaFrame>
+  );
+}
+
+export function AdmissionManualsPage({ onBack }: { onBack?: () => void } = {}) {
+  const manuals = [{ id: "required-documents", title: "Documentacao necessaria para admissao", description: "Checklist enviado pelo escritorio. Para este fluxo, utilize a pagina 1.", url: `${API_URL}/manuals/admission-required-documents` }];
+  const [selectedManualId, setSelectedManualId] = useState(manuals[0].id);
+  const selectedManual = manuals.find((manual) => manual.id === selectedManualId) ?? manuals[0];
+  return (
+    <AreaFrame title="Manuais de Admissao" subtitle="Arquivos de apoio vinculados a esta esteira de trabalho." icon={<FileText />} smallHeader>
+      <div className="manual-page-actions">{onBack ? <button type="button" onClick={onBack}><ArrowLeft size={17} /> Voltar para a admissao</button> : <Link to="/area/pessoal/station/admissoes"><ArrowLeft size={17} /> Voltar para a admissao</Link>}</div>
+      <section className="ops-panel manual-library"><nav>{manuals.map((manual) => <button className={selectedManualId === manual.id ? "active" : ""} type="button" key={manual.id} onClick={() => setSelectedManualId(manual.id)}><FileText size={18} /><span><strong>{manual.title}</strong><small>{manual.description}</small></span></button>)}</nav><div className="manual-viewer"><div><strong>{selectedManual.title}</strong><span><a href={`${selectedManual.url}#page=1`} target="_blank" rel="noreferrer">Abrir em outra aba</a><a href={`${selectedManual.url}?download=true`}>Baixar PDF</a></span></div><iframe title={selectedManual.title} src={`${selectedManual.url}#page=1&view=FitH`} /></div></section>
+    </AreaFrame>
+  );
+}
+
 export function WorkstationPage() {
   const { areaId, stationId } = useParams();
+  if (areaId === "pessoal" && stationId === "admissoes") return <AdmissionWorkstationPage />;
+  return <StandardWorkstationPage areaId={areaId} stationId={stationId} />;
+}
+
+function StandardWorkstationPage({ areaId, stationId }: { areaId?: string; stationId?: string }) {
   const navigate = useNavigate();
   const departmentId = areaId === "pessoal" ? "pessoal" : "contabil";
   const station = departmentCatalog[departmentId].stations.find((item) => item.id === stationId);

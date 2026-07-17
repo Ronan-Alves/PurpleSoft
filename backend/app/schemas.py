@@ -31,12 +31,31 @@ class TaskOut(BaseModel):
     client_name: str
     status: str
     area_id: str
+    priority: str
+    assignee: str | None = None
+    station_id: str | None = None
+    requested_at: str | None = None
+    checklist_ready: bool = False
 
 
 class OperationMap(BaseModel):
     areas: list[WorkAreaOut]
     tasks: list[TaskOut]
     summary: dict[str, int | float]
+
+
+class PersonnelSettingsIn(BaseModel):
+    admissionSlaDays: int = Field(ge=1, le=30)
+    terminationSlaDays: int = Field(ge=1, le=30)
+    vacationSlaDays: int = Field(ge=1, le=30)
+    payrollDueDay: int = Field(ge=1, le=31)
+    criticalStartDay: int = Field(ge=1, le=31)
+    criticalEndDay: int = Field(ge=1, le=31)
+    warningDays: int = Field(ge=0, le=15)
+
+
+class PersonnelSettingsOut(PersonnelSettingsIn):
+    pass
 
 
 class CustomerContactIn(BaseModel):

@@ -4,7 +4,7 @@ import { isLoggedIn } from "./app/shared";
 import FactoryDashboard from "./pages/FactoryDashboard";
 import LoginPage from "./pages/LoginPage";
 import Dashboard from "./pages/OperationDashboard";
-import AreaPage, { WorkstationPage } from "./pages/AreaPage";
+import AreaPage, { AdmissionManualsPage, WorkstationPage } from "./pages/AreaPage";
 import PlaceholderPage from "./pages/PlaceholderPage";
 import { ClientLoginPage, ClientPendingFormPage, ClientPendingListPage, ClientPrivateRoute } from "./pages/ClientPortal";
 
@@ -23,6 +23,7 @@ export default function App() {
         <Route path="/" element={<PrivateRoute><FactoryDashboard /></PrivateRoute>} />
         <Route path="/operation" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
         <Route path="/area/:areaId" element={<PrivateRoute><AreaPage /></PrivateRoute>} />
+        <Route path="/area/pessoal/station/admissoes/manuals" element={<PrivateRoute><AdmissionManualsPage /></PrivateRoute>} />
         <Route path="/area/:areaId/station/:stationId" element={<PrivateRoute><WorkstationPage /></PrivateRoute>} />
         <Route path="/reports" element={<PrivateRoute><PlaceholderPage title="Relatorios" /></PrivateRoute>} />
         <Route path="/indicators" element={<PrivateRoute><PlaceholderPage title="Indicadores" /></PrivateRoute>} />

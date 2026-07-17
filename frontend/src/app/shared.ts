@@ -20,6 +20,11 @@ export type Task = {
   client_name: string;
   status: string;
   area_id: string;
+  priority: string;
+  assignee?: string | null;
+  station_id?: string | null;
+  requested_at?: string | null;
+  checklist_ready?: boolean;
 };
 
 export type OperationMap = {
@@ -56,9 +61,9 @@ export const fallbackMap: OperationMap = {
     { id: "entrega", name: "Entrega Final", kind: "delivery", status: "done", position_x: 93, position_y: 35, wip: 7, pending: 1, priority: 0 }
   ],
   tasks: [
-    { id: 1, title: "Fechamento contabil", client_name: "Escritorio Alfa", status: "running", area_id: "contabil" },
-    { id: 2, title: "Conciliacao bancaria", client_name: "Cliente Aurora", status: "blocked", area_id: "contabil" },
-    { id: 3, title: "Admissao mensal", client_name: "Cliente Prisma", status: "running", area_id: "pessoal" }
+    { id: 1, title: "Fechamento contabil", client_name: "Escritorio Alfa", status: "running", area_id: "contabil", priority: "alta", assignee: "Ana Souza" },
+    { id: 2, title: "Conciliacao bancaria", client_name: "Cliente Aurora", status: "blocked", area_id: "contabil", priority: "critica" },
+    { id: 3, title: "Admissao mensal", client_name: "Cliente Prisma", status: "running", area_id: "pessoal", priority: "normal", assignee: "Camila Rocha" }
   ],
   summary: { running: 42, pending: 8, priority: 5, blocked: 3, productivity: 78, quality: 96, done: 128 }
 };

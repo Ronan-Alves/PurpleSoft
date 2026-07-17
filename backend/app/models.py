@@ -150,6 +150,11 @@ class Task(Base):
     client_name: Mapped[str] = mapped_column(String(120), nullable=False)
     status: Mapped[str] = mapped_column(String(40), nullable=False)
     area_id: Mapped[str] = mapped_column(ForeignKey("work_areas.id"), nullable=False)
+    priority: Mapped[str] = mapped_column(String(20), nullable=False, default="normal")
+    assignee: Mapped[str | None] = mapped_column(String(120))
+    station_id: Mapped[str | None] = mapped_column(String(80), index=True)
+    requested_at: Mapped[str | None] = mapped_column(String(20))
+    checklist_ready: Mapped[bool] = mapped_column(nullable=False, default=False)
 
     area: Mapped[WorkArea] = relationship(back_populates="tasks")
 
@@ -166,6 +171,19 @@ class StationTime(Base):
 
     station_key: Mapped[str] = mapped_column(String(120), primary_key=True)
     elapsed_seconds: Mapped[int] = mapped_column(default=0, nullable=False)
+
+
+class PersonnelSettings(Base):
+    __tablename__ = "personnel_settings"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default="default")
+    admission_sla_days: Mapped[int] = mapped_column(nullable=False, default=1)
+    termination_sla_days: Mapped[int] = mapped_column(nullable=False, default=2)
+    vacation_sla_days: Mapped[int] = mapped_column(nullable=False, default=3)
+    payroll_due_day: Mapped[int] = mapped_column(nullable=False, default=25)
+    critical_start_day: Mapped[int] = mapped_column(nullable=False, default=20)
+    critical_end_day: Mapped[int] = mapped_column(nullable=False, default=25)
+    warning_days: Mapped[int] = mapped_column(nullable=False, default=1)
 
 
 class AuditLog(Base):

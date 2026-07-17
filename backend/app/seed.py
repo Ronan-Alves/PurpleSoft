@@ -24,18 +24,41 @@ TASKS = [
 ]
 
 PERSONNEL_FACTORY_TASKS = [
-    ("Admissao urgente - Grupo Litoral", "Grupo Litoral", "waiting_release", "pessoal"),
-    ("Admissao de novos colaboradores", "Aurora Alimentos", "pending", "pessoal"),
-    ("Conferencia de documentos admissionais", "Prisma Tech", "running", "pessoal"),
-    ("Rescisao por acordo", "Rota Sul", "waiting_release", "pessoal"),
-    ("Calculo de rescisao contratual", "Pedra Alta", "pending", "pessoal"),
-    ("Rescisao concluida aguardando financeiro", "Bem Viver", "done_waiting", "pessoal"),
-    ("Programacao de ferias coletivas", "Moveis Nobre", "pending", "pessoal"),
-    ("Ferias aguardando aprovacao do cliente", "Educa Mais", "waiting", "pessoal"),
-    ("Ferias calculadas aguardando folha", "Sabor da Serra", "done_waiting", "pessoal"),
-    ("Fechamento da folha mensal", "Alpha Engenharia", "running", "pessoal"),
-    ("Folha aguardando cartao ponto", "Orbita Sistemas", "waiting_release", "pessoal"),
-    ("Folha processada aguardando encargos", "Mercado Boa Compra", "done_waiting", "pessoal"),
+    ("Admissao de colaborador", "Grupo Litoral", "waiting_release", "admissoes", "2026-07-08", False, "critica", None),
+    ("Admissao de colaborador", "Aurora Alimentos", "pending", "admissoes", "2026-07-12", True, "alta", "Ana Souza"),
+    ("Admissao de colaborador", "Prisma Tech", "running", "admissoes", "2026-07-15", True, "normal", "Camila Rocha"),
+    ("Rescisao contratual", "Rota Sul", "waiting_release", "rescisoes", "2026-07-07", False, "critica", None),
+    ("Rescisao contratual", "Pedra Alta", "pending", "rescisoes", "2026-07-11", True, "alta", "Bruno Lima"),
+    ("Rescisao contratual", "Bem Viver", "done_waiting", "rescisoes", "2026-07-14", True, "normal", "Bruno Lima"),
+    ("Calculo de ferias", "Moveis Nobre", "pending", "ferias", "2026-07-09", True, "alta", "Diego Martins"),
+    ("Calculo de ferias", "Educa Mais", "waiting_release", "ferias", "2026-07-13", False, "normal", None),
+    ("Calculo de ferias", "Sabor da Serra", "done_waiting", "ferias", "2026-07-16", True, "normal", "Diego Martins"),
+    ("Processamento da folha", "Alpha Engenharia", "running", "folha", "2026-07-06", True, "critica", "Camila Rocha"),
+    ("Processamento da folha", "Orbita Sistemas", "waiting_release", "folha", "2026-07-10", False, "alta", None),
+    ("Processamento da folha", "Mercado Boa Compra", "done_waiting", "folha", "2026-07-15", True, "normal", "Ana Souza"),
+]
+
+ACCOUNTING_FACTORY_TASKS = [
+    ("Folha contabil mensal", "Aurora Alimentos", "pending", "critica", "Ana Souza"),
+    ("Folha contabil mensal", "Prisma Tech", "running", "alta", "Bruno Lima"),
+    ("Folha contabil mensal", "Verde Campo", "done", "normal", "Ana Souza"),
+    ("Folha contabil mensal", "Horizonte", "pending", "alta", None),
+    ("Folha contabil mensal", "Bem Viver", "done", "normal", "Bruno Lima"),
+    ("Folha contabil mensal", "Rota Sul", "blocked", "critica", None),
+    ("Folha contabil mensal", "Santa Luzia Agro", "running", "alta", "Camila Rocha"),
+    ("Folha contabil mensal", "Ponto Certo", "done", "normal", "Camila Rocha"),
+    ("Folha contabil mensal", "Pedra Alta", "pending", "normal", None),
+    ("Folha contabil mensal", "Educa Mais", "done", "baixa", "Diego Martins"),
+    ("Folha contabil mensal", "Brava Digital", "pending", "alta", "Diego Martins"),
+    ("Folha contabil mensal", "Boa Compra", "done", "normal", "Diego Martins"),
+    ("Folha contabil mensal", "Moveis Nobre", "pending", "critica", None),
+    ("Folha contabil mensal", "Sabor da Serra", "running", "alta", "Ana Souza"),
+    ("Folha contabil mensal", "Orbita Sistemas", "pending", "normal", "Bruno Lima"),
+    ("Folha contabil mensal", "Central Express", "done", "normal", "Bruno Lima"),
+    ("Folha contabil mensal", "Alpha Engenharia", "blocked", "critica", "Camila Rocha"),
+    ("Folha contabil mensal", "Doces da Vila", "pending", "alta", None),
+    ("Folha contabil mensal", "Grupo Litoral", "running", "critica", "Ana Souza"),
+    ("Folha contabil mensal", "Novo Caminho", "done", "normal", "Camila Rocha"),
 ]
 
 DEMO_OFFICES = [
@@ -90,11 +113,23 @@ def seed_database(db: Session) -> None:
             customer.service_interests = [CustomerServiceInterest(service_type=service) for service in services]
             db.add(customer)
 
-    existing_task_titles = {title for (title,) in db.query(Task.title).all()}
+    for title, client, status, station_id, requested_at, checklist_ready, priority, assignee in PERSONNEL_FACTORY_TASKS:
+        task = db.query(Task).filter(Task.area_id == "pessoal", Task.client_name == client, Task.station_id == station_id).first()
+        if not task:
+            task = Task(title=title, client_name=client, status=status, area_id="pessoal")
+            db.add(task)
+        task.title = title
+        task.status = status
+        task.station_id = station_id
+        task.requested_at = requested_at
+        task.checklist_ready = checklist_ready
+        task.priority = priority
+        task.assignee = assignee
+    existing_accounting_clients = {client for (client,) in db.query(Task.client_name).filter(Task.area_id == "contabil", Task.title == "Folha contabil mensal").all()}
     db.add_all(
-        Task(title=title, client_name=client, status=status, area_id=area)
-        for title, client, status, area in PERSONNEL_FACTORY_TASKS
-        if title not in existing_task_titles
+        Task(title=title, client_name=client, status=status, area_id="contabil", priority=priority, assignee=assignee)
+        for title, client, status, priority, assignee in ACCOUNTING_FACTORY_TASKS
+        if client not in existing_accounting_clients
     )
 
     db.commit()
