@@ -2032,6 +2032,47 @@ a {
 .manager-review-actions { display: flex; align-items: center; gap: 7px; white-space: nowrap; }
 .manager-review-actions button { display: inline-flex; align-items: center; gap: 5px; min-height: 32px; padding: 6px 10px; border: 1px solid #c7d5e5; border-radius: 6px; background: #fff; color: #40536d; cursor: pointer; }
 .manager-review-actions button:last-child { border-color: #2876d2; background: #2876d2; color: #fff; }
+.personnel-alert-card.management { border-top-color: #7357c8; }
+.management-dashboard-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 12px; border: 1px solid #d9e4f1; border-radius: 8px; padding: 11px 14px; background: #fff; }
+.management-dashboard-toolbar > div { display: grid; gap: 3px; }
+.management-dashboard-toolbar span { color: #63738a; font-size: .75rem; }
+.management-dashboard-toolbar label { display: flex; align-items: center; gap: 8px; color: #53647a; font-size: .75rem; font-weight: 900; }
+.management-dashboard-toolbar select { border: 1px solid #cbd9e8; border-radius: 7px; padding: 7px 9px; background: #fff; }
+.management-dashboard { display: grid; gap: 12px; }
+.management-dashboard-error { color: #8a3b3b; }
+.management-kpis { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
+.management-kpis article { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 4px 8px; border: 1px solid #d9e4f1; border-radius: 8px; padding: 11px; background: #fff; }
+.management-kpis article > svg { grid-row: 1 / span 2; color: #236cd1; }
+.management-kpis span { color: #607187; font-size: .7rem; font-weight: 800; }
+.management-kpis strong { color: #17253d; font-size: 1.25rem; }
+.management-kpis small { grid-column: 1 / -1; color: #7a899b; font-size: .64rem; }
+.management-kpis article.danger { border-color: #efb9b9; background: #fff7f7; }
+.management-kpis article.danger svg, .management-kpis article.danger strong { color: #c43f46; }
+.management-kpis article.positive svg, .management-kpis article.positive strong { color: #33845a; }
+.metric-help { position: relative; display: inline-flex; align-items: center; vertical-align: middle; margin-left: 2px; color: #7890a8; cursor: help; }
+.metric-help svg { color: currentColor !important; }
+.metric-help::after { position: absolute; z-index: 30; left: 50%; bottom: calc(100% + 8px); width: 230px; border-radius: 7px; padding: 8px 10px; background: #17253d; color: #fff; content: attr(data-tooltip); font-size: .7rem; font-weight: 600; line-height: 1.35; opacity: 0; pointer-events: none; transform: translate(-50%, 4px); transition: opacity .15s ease, transform .15s ease; box-shadow: 0 8px 22px rgb(15 30 50 / 22%); }
+.metric-help:hover::after, .metric-help:focus::after { opacity: 1; transform: translate(-50%, 0); }
+.management-dashboard-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(320px, .65fr); gap: 12px; }
+.management-trend, .management-stations { display: grid; gap: 12px; }
+.management-trend > div:first-child, .management-stations > div:first-child { display: grid; gap: 3px; }
+.management-trend h3, .management-stations h3 { margin: 0; }
+.management-trend small, .management-stations small { color: #6d7d90; }
+.management-bars { display: flex; align-items: end; gap: 8px; min-height: 210px; border-bottom: 1px solid #d8e3ee; padding: 10px 4px 0; }
+.management-bars article { display: grid; grid-template-rows: auto 150px auto; align-items: end; justify-items: center; flex: 1; gap: 5px; }
+.management-bars article > div { display: flex; align-items: end; width: min(34px, 75%); height: 150px; border-radius: 5px 5px 0 0; background: #edf3f9; overflow: hidden; }
+.management-bars article > div span { display: block; width: 100%; border-radius: 5px 5px 0 0; background: linear-gradient(#6ea9ee, #236cd1); }
+.management-bars article strong { font-size: .78rem; }
+.management-bars article small { font-size: .66rem; }
+.management-stations > article { display: grid; grid-template-columns: minmax(120px, 1fr) repeat(3, auto); align-items: center; gap: 10px; border-top: 1px solid #e2eaf2; padding-top: 10px; }
+.management-stations > article span { color: #63738a; font-size: .7rem; }
+.management-stations > article span.danger { color: #c43f46; }
+.management-employees { display: grid; gap: 10px; }
+.efficiency-badge { display: inline-flex; min-width: 58px; justify-content: center; border-radius: 999px; padding: 4px 7px; font-size: .7rem; font-weight: 900; }
+.efficiency-badge.positive { background: #e4f5ea; color: #287246; }
+.efficiency-badge.negative { background: #fde8e8; color: #b5363d; }
+@media (max-width: 1250px) { .management-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 900px) { .management-dashboard-grid { grid-template-columns: 1fr; } .management-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .personnel-task-queue { margin-top: 14px; }
 .task-queue-table th button { border: 0; padding: 0; background: transparent; color: inherit; font: inherit; font-weight: 900; cursor: pointer; }
 .task-queue-table th button:hover { color: #236cd1; }

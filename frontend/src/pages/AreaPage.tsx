@@ -518,16 +518,17 @@ function TriageArea({ store }: { store: ReturnType<typeof useOperationState> }) 
 }
 
 function SortableTaskTable({ tasks, selectedTaskId, onSelectTask, showAdmissionStage = false }: { tasks: ApiTask[]; selectedTaskId?: number | null; onSelectTask?: (task: ApiTask) => void; showAdmissionStage?: boolean }) {
-  const [sort, setSort] = useState<{ column: "code" | "priority" | "company" | "employee" | "requested" | "status" | "station" | "stage"; direction: "asc" | "desc" }>({ column: "code", direction: "asc" });
+  const [sort, setSort] = useState<{ column: "code" | "priority" | "company" | "employee" | "requested" | "deadline" | "status" | "station" | "stage"; direction: "asc" | "desc" }>({ column: "code", direction: "asc" });
   const [search, setSearch] = useState("");
   const priorityRank: Record<string, number> = { critica: 0, alta: 1, normal: 2, baixa: 3 };
   const stationLabel = (stationId?: string | null) => departmentCatalog.pessoal.stations.find((station) => station.id === stationId)?.title ?? "Sem esteira";
   const statusLabel: Record<string, string> = { waiting_release: "Aguardando liberação", pending: "Liberada", running: "Em execução", blocked: "Aguardando", done: "Concluída", done_waiting: "Concluída" };
-  const stageLabel: Record<string, string> = { conference: "Conferência", registration: "Cadastro", esocial: "eSocial", contracts: "Contratos", communication: "Comunicação", completed: "Concluída" };
+  const stageLabel: Record<string, string> = { conference: "Checklist", registration: "Cadastro", esocial: "eSocial", contracts: "Contratos", communication: "Comunicação", completed: "Concluída" };
+  const currentStageLabel = (task: ApiTask) => task.workflow_stage ? (stageLabel[task.workflow_stage] ?? task.workflow_stage) : "—";
   const filteredTasks = tasks.filter((task) => {
     const term = search.trim().toLocaleLowerCase();
     if (!term) return true;
-    return [task.task_code ?? `T-${String(task.id).padStart(6, "0")}`, task.client_name, task.employee_name, stationLabel(task.station_id), stageLabel[task.workflow_stage ?? ""] ?? statusLabel[task.status] ?? task.status, task.priority, task.requested_at].some((value) => value?.toLocaleLowerCase().includes(term));
+    return [task.task_code ?? `T-${String(task.id).padStart(6, "0")}`, task.client_name, task.employee_name, stationLabel(task.station_id), currentStageLabel(task), task.priority, task.requested_at, task.deadline].some((value) => value?.toLocaleLowerCase().includes(term));
   });
   const sortedTasks = [...filteredTasks].sort((first, second) => {
     const value = (task: ApiTask) => {
@@ -536,8 +537,9 @@ function SortableTaskTable({ tasks, selectedTaskId, onSelectTask, showAdmissionS
       if (sort.column === "company") return task.client_name;
       if (sort.column === "employee") return task.employee_name ?? "";
       if (sort.column === "requested") return task.requested_at ?? "";
+      if (sort.column === "deadline") return task.deadline ?? "";
       if (sort.column === "station") return stationLabel(task.station_id);
-      if (sort.column === "stage") return stageLabel[task.workflow_stage ?? ""] ?? "Conferência";
+      if (sort.column === "stage") return currentStageLabel(task);
       return statusLabel[task.status] ?? task.status;
     };
     const a = value(first);
@@ -547,10 +549,11 @@ function SortableTaskTable({ tasks, selectedTaskId, onSelectTask, showAdmissionS
   });
   const sortBy = (column: typeof sort.column) => setSort((current) => current.column === column ? { column, direction: current.direction === "asc" ? "desc" : "asc" } : { column, direction: "asc" });
   const header = (column: typeof sort.column, label: string) => <button type="button" onClick={() => sortBy(column)}>{label}{sort.column === column ? (sort.direction === "asc" ? " ↑" : " ↓") : ""}</button>;
-  return <div className="task-queue-table"><label className="task-queue-search">Buscar na fila<input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Código, empresa, colaborador ou etapa" /></label><div className="company-table-wrap"><table className="company-table"><thead><tr><th>{header("code", "Código")}</th><th>{header("priority", "Prioridade")}</th><th>{header("company", "Empresa")}</th><th>{header("employee", "Colaborador")}</th>{!showAdmissionStage && <th>{header("station", "Esteira")}</th>}<th>{header("requested", "Solicitada em")}</th><th>{showAdmissionStage ? header("stage", "Etapa") : header("status", "Status")}</th></tr></thead><tbody>{sortedTasks.map((task) => <tr className={selectedTaskId === task.id ? "selected-task" : onSelectTask ? "selectable-task" : ""} onClick={() => onSelectTask?.(task)} key={task.id}><td><strong>{task.task_code ?? `T-${String(task.id).padStart(6, "0")}`}</strong></td><td><span className={`priority-badge ${task.priority}`}>{task.priority}</span></td><td>{task.client_name}</td><td>{task.employee_name ?? "—"}</td>{!showAdmissionStage && <td>{stationLabel(task.station_id)}</td>}<td>{task.requested_at ?? "—"}</td><td>{showAdmissionStage ? (stageLabel[task.workflow_stage ?? ""] ?? "Conferência") : (statusLabel[task.status] ?? task.status)}</td></tr>)}{sortedTasks.length === 0 && <tr><td colSpan={showAdmissionStage ? 6 : 7} className="empty-state">Sem tarefas encontradas.</td></tr>}</tbody></table></div></div>;
+  return <div className="task-queue-table"><label className="task-queue-search">Buscar na fila<input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Código, empresa, colaborador ou etapa" /></label><div className="company-table-wrap"><table className="company-table"><thead><tr><th>{header("code", "Código")}</th><th>{header("priority", "Prioridade")}</th><th>{header("company", "Empresa")}</th><th>{header("employee", "Colaborador")}</th>{!showAdmissionStage && <th>{header("station", "Esteira")}</th>}<th>{header("requested", "Solicitada em")}</th><th>{header("deadline", "Data limite")}</th><th>{header("stage", "Etapa")}</th></tr></thead><tbody>{sortedTasks.map((task) => <tr className={selectedTaskId === task.id ? "selected-task" : onSelectTask ? "selectable-task" : ""} onClick={() => onSelectTask?.(task)} key={task.id}><td><strong>{task.task_code ?? `T-${String(task.id).padStart(6, "0")}`}</strong></td><td><span className={`priority-badge ${task.priority}`}>{task.priority}</span></td><td>{task.client_name}</td><td>{task.employee_name ?? "—"}</td>{!showAdmissionStage && <td>{stationLabel(task.station_id)}</td>}<td>{task.requested_at ?? "—"}</td><td>{task.deadline ?? "—"}</td><td>{currentStageLabel(task)}</td></tr>)}{sortedTasks.length === 0 && <tr><td colSpan={showAdmissionStage ? 7 : 8} className="empty-state">Sem tarefas encontradas.</td></tr>}</tbody></table></div></div>;
 }
 
 function DepartmentArea({ departmentId, store }: { departmentId: "contabil" | "pessoal"; store: ReturnType<typeof useOperationState> }) {
+  const navigate = useNavigate();
   const { state } = store;
   const department = departmentCatalog[departmentId];
   const map = useFilteredOperationMap();
@@ -603,7 +606,7 @@ function DepartmentArea({ departmentId, store }: { departmentId: "contabil" | "p
     };
     const daysToDeadline = (task: typeof personnelTasks[number], stationId: string) => Math.ceil((deadlineFor(task, stationId).getTime() - now.getTime()) / 86400000);
     const openPersonnelTasks = personnelTasks.filter((task) => task.status !== "done" && task.status !== "manager_review");
-    const managerReviewTasks = personnelTasks.filter((task) => task.status === "manager_review");
+    const completedPersonnelTasks = personnelTasks.filter((task) => task.status === "done");
     const globalChecklistPending = openPersonnelTasks.filter((task) => !task.checklist_ready).length;
     const globalAvailable = openPersonnelTasks.filter((task) => task.checklist_ready && task.status === "pending").length;
     const globalWarning = openPersonnelTasks.filter((task) => task.checklist_ready && daysToDeadline(task, task.station_id!) >= 0 && daysToDeadline(task, task.station_id!) <= personnelSettings.warningDays).length;
@@ -634,7 +637,7 @@ function DepartmentArea({ departmentId, store }: { departmentId: "contabil" | "p
               <Link className={`personnel-alert-card ${overdue ? "danger" : warning ? "warning" : "normal"}`} to={`/area/pessoal/station/${station.id}`} key={station.id}><header><div><span className="machine-light" /><strong>{station.title}</strong></div><span>{tasks.length} solicitacoes</span></header><div className="alert-numbers"><div className="locked"><strong>{blocked}</strong><span>checklist pendente</span></div><div className="available"><strong>{available}</strong><span>liberadas</span></div><div className="warning"><strong>{warning}</strong><span>proximas do prazo</span></div><div className="danger"><strong>{overdue}</strong><span>atrasadas</span></div></div><footer><span>{station.id === "folha" ? `Prazo mensal: dia ${personnelSettings.payrollDueDay}` : nearest ? `Proximo prazo em ${Math.max(daysToDeadline(nearest, station.id), 0)} dia(s)` : "Sem prazo pendente"}</span><strong>Ver fila da esteira →</strong></footer></Link>
             );
           })}
-          <Link className={`personnel-alert-card ${managerReviewTasks.length ? "warning" : "normal"}`} to="/area/pessoal/station/analise-gestor"><header><div><span className="machine-light" /><strong>Análise do Gestor</strong></div><span>{managerReviewTasks.length} peça(s)</span></header><div className="alert-numbers"><div className="warning"><strong>{managerReviewTasks.length}</strong><span>aguardando análise</span></div></div><footer><span>Saída de qualidade após a entrega ao cliente</span><strong>Abrir ponto de análise →</strong></footer></Link>
+          <Link className="personnel-alert-card management" to="/area/pessoal/station/analise-gestor"><header><div><span className="machine-light" /><strong>Gestão do Setor</strong></div><span>{openPersonnelTasks.length} ativas</span></header><div className="alert-numbers"><div className="available"><strong>{completedPersonnelTasks.length}</strong><span>concluídas registradas</span></div><div className="warning"><strong>{globalOverdue}</strong><span>atrasadas agora</span></div></div><footer><span>Produtividade, prazos e evolução da eficiência</span><strong>Abrir dashboard →</strong></footer></Link>
         </section>
         <section className="personnel-summary personnel-queue-filters" aria-label="Filtros da fila de demandas">
           <button className={personnelQueueFilter === "checklist" ? "active" : ""} type="button" onClick={() => toggleQueueFilter("checklist")}><ClipboardList /><span>Checklist pendente</span><strong>{globalChecklistPending}</strong></button>
@@ -642,7 +645,7 @@ function DepartmentArea({ departmentId, store }: { departmentId: "contabil" | "p
           <button className={personnelQueueFilter === "warning" ? "active" : ""} type="button" onClick={() => toggleQueueFilter("warning")}><Timer /><span>Próximas do prazo</span><strong>{globalWarning}</strong></button>
           <button className={personnelQueueFilter === "overdue" ? "active" : ""} type="button" onClick={() => toggleQueueFilter("overdue")}><PlayCircle /><span>Atrasadas</span><strong>{globalOverdue}</strong></button>
         </section>
-        <section className="ops-panel personnel-task-queue"><div className="customer-list-header"><div><h3>Fila de demandas</h3><small>{personnelQueueFilter ? `${queueTasks.length} demanda(s) no filtro selecionado. Clique novamente no filtro para limpar.` : "Clique em qualquer coluna para ordenar a fila operacional."}</small></div>{personnelQueueFilter && <button className="secondary-button" type="button" onClick={() => setPersonnelQueueFilter(null)}>Limpar filtro</button>}</div><SortableTaskTable tasks={queueTasks} /></section>
+        <section className="ops-panel personnel-task-queue"><div className="customer-list-header"><div><h3>Fila de demandas</h3><small>{personnelQueueFilter ? `${queueTasks.length} demanda(s) no filtro selecionado. Clique novamente no filtro para limpar.` : "Clique em qualquer coluna para ordenar a fila operacional. Clique na demanda para abrir a esteira."}</small></div>{personnelQueueFilter && <button className="secondary-button" type="button" onClick={() => setPersonnelQueueFilter(null)}>Limpar filtro</button>}</div><SortableTaskTable tasks={queueTasks} onSelectTask={(task) => task.station_id && navigate(`/area/pessoal/station/${task.station_id}?task=${task.id}`)} /></section>
       </AreaFrame>
     );
   }
@@ -884,7 +887,7 @@ function AdmissionWorkstationPage() {
     const response = await fetch(`${API_URL}/tasks/${selectedTaskId}/notes/${noteId}`, { method: "DELETE", headers: authHeaders() });
     if (response.ok) setTaskNotes((current) => current.filter((note) => note.id !== noteId));
   }
-  const workflowPanel = <section className="admission-workflow">{[{ key: "conference", label: "Conferência" }, { key: "registration", label: "Cadastro" }, { key: "esocial", label: "eSocial" }, { key: "contracts", label: "Contratos" }, { key: "communication", label: "Comunicação" }].map((step, index) => { const current = workflowSteps.find((item) => item.stepKey === step.key); return <article className={current?.status ?? "locked"} key={step.key}><span>{index + 1}</span><div><strong>{step.label}</strong><small>{current?.status === "done" ? "Concluída" : current?.status === "locked" ? "Aguardando etapa anterior" : current?.status === "waiting_release" ? "Aguardando checklist" : "Liberada"}</small></div>{current?.status === "pending" && <button type="button" onClick={() => void completeWorkflowStep(step.key)}>Concluir</button>}</article>; })}</section>;
+  const workflowPanel = <section className="admission-workflow">{[{ key: "conference", label: "Checklist" }, { key: "registration", label: "Cadastro" }, { key: "esocial", label: "eSocial" }, { key: "contracts", label: "Contratos" }, { key: "communication", label: "Comunicação" }].map((step, index) => { const current = workflowSteps.find((item) => item.stepKey === step.key); return <article className={current?.status ?? "locked"} key={step.key}><span>{index + 1}</span><div><strong>{step.label}</strong><small>{current?.status === "done" ? "Concluída" : current?.status === "locked" ? "Aguardando etapa anterior" : current?.status === "waiting_release" ? "Aguardando checklist" : "Liberada"}</small></div>{current?.status === "pending" && <button type="button" onClick={() => void completeWorkflowStep(step.key)}>Concluir</button>}</article>; })}</section>;
   const notesPanel = <aside className="ops-panel admission-notes"><div><h3>Histórico e notas</h3><small>Atualizações automáticas e observações da equipe.</small></div><div className="task-history">{taskHistory.map((event) => <article key={event.id}><span>{new Date(event.occurredAt).toLocaleString("pt-BR")}</span><strong>{event.message}</strong></article>)}{taskHistory.length === 0 && <small>Sem atualizações registradas.</small>}</div><div className="task-note-composer"><textarea value={noteDraft} onChange={(event) => setNoteDraft(event.target.value)} placeholder="Escreva uma nota..." /><footer><button type="button" onClick={() => { setNoteDraft(""); setEditingNoteId(null); }}>Limpar</button><button type="button" onClick={() => void saveTaskNote()}>{editingNoteId ? "Salvar edição" : "Enviar edição"}</button></footer></div><div className="task-notes-list">{taskNotes.map((note) => <article key={note.id}><p>{note.body}</p><small>{note.author} · {new Date(note.createdAt).toLocaleString("pt-BR")}{note.updatedAt ? " · editada" : ""}</small><span><button type="button" onClick={() => { setNoteDraft(note.body); setEditingNoteId(note.id); }}>Editar</button><button type="button" onClick={() => void removeTaskNote(note.id)}>Excluir</button></span></article>)}{taskNotes.length === 0 && <small>Sem notas registradas.</small>}</div></aside>;
 
   if (searchParams.get("view") === "manuals") {
@@ -983,27 +986,44 @@ export function AdmissionManualsPage({ onBack }: { onBack?: () => void } = {}) {
   );
 }
 
-function ManagerReviewPage() {
-  const map = useFilteredOperationMap();
-  const [handledTaskIds, setHandledTaskIds] = useState<number[]>([]);
-  const [message, setMessage] = useState("");
-  const tasks = map.tasks.filter((task) => task.area_id === "pessoal" && task.station_id === "admissoes" && task.status === "manager_review" && !handledTaskIds.includes(task.id));
+function ManagerDashboardPage() {
+  type Analytics = { periodDays: number; summary: { active: number; overdue: number; completed: number; slaRate: number; activeOnTimeRate: number; averageCycleDays: number; efficiencyChange: number }; trend: { label: string; completed: number }[]; employees: { name: string; active: number; completed: number; overdue: number; slaRate: number; averageCycleDays: number; efficiencyChange: number }[]; stations: { stationId: string; label: string; active: number; completed: number; overdue: number }[] };
+  const [days, setDays] = useState(30);
+  const [analytics, setAnalytics] = useState<Analytics | null>(null);
+  const [error, setError] = useState("");
 
-  async function review(taskId: number, decision: "approve" | "return") {
-    setMessage("");
-    const response = await fetch(`${API_URL}/admissions/${taskId}/manager-review`, { method: "POST", headers: authHeaders({ "Content-Type": "application/json" }), body: JSON.stringify({ decision }) });
-    if (!response.ok) {
-      const body = await response.json().catch(() => null) as { detail?: string } | null;
-      setMessage(body?.detail ?? "Não foi possível registrar a análise.");
-      return;
-    }
-    setHandledTaskIds((current) => [...current, taskId]);
-    setMessage(decision === "approve" ? "Admissão aprovada e arquivada." : "Admissão devolvida para a etapa Comunicação.");
-  }
+  useEffect(() => {
+    setError("");
+    fetch(`${API_URL}/personnel-analytics?days=${days}`, { headers: authHeaders() }).then(async (response) => {
+      if (!response.ok) { const body = await response.json().catch(() => null) as { detail?: string } | null; throw new Error(body?.detail ?? "Não foi possível carregar os indicadores."); }
+      return response.json();
+    }).then(setAnalytics).catch((reason) => { setAnalytics(null); setError(reason instanceof Error ? reason.message : "Não foi possível carregar os indicadores."); });
+  }, [days]);
+
+  const maxTrend = Math.max(...(analytics?.trend.map((item) => item.completed) ?? [1]), 1);
+  const efficiencyLabel = (value: number) => `${value > 0 ? "+" : ""}${value.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`;
+  const help = (text: string) => <span className="metric-help" data-tooltip={text} tabIndex={0} aria-label={text}><CircleHelp size={13} /></span>;
 
   return (
-    <AreaFrame title="Análise do Gestor" subtitle="Ponto de saída para conferir as admissões entregues antes do arquivamento definitivo." icon={<PackageCheck />} smallHeader backTo="/area/pessoal" backLabel="Sair">
-      <section className="ops-panel manager-review-queue"><div className="customer-list-header"><div><h3>Peças aguardando análise</h3><small>{tasks.length} admissão(ões) concluída(s) pela operação e entregue(s) ao cliente.</small></div></div>{message && <p className="personnel-request-message">{message}</p>}<div className="company-table-wrap"><table className="company-table"><thead><tr><th>Código</th><th>Empresa</th><th>Colaborador</th><th>Solicitada em</th><th>Apresentação</th><th>Decisão do gestor</th></tr></thead><tbody>{tasks.map((task) => <tr key={task.id}><td><strong>{task.task_code ?? `T-${String(task.id).padStart(6, "0")}`}</strong></td><td>{task.client_name}</td><td>{task.employee_name ?? "—"}</td><td>{task.requested_at ?? "—"}</td><td><Link to={`/area/pessoal/station/admissoes?task=${task.id}`}>Abrir dossiê</Link></td><td><div className="manager-review-actions"><button type="button" onClick={() => void review(task.id, "return")}>Devolver</button><button type="button" onClick={() => void review(task.id, "approve")}><CheckCircle2 size={16} /> Aprovar e arquivar</button></div></td></tr>)}{tasks.length === 0 && <tr><td colSpan={6} className="empty-state">Nenhuma peça aguardando análise do gestor.</td></tr>}</tbody></table></div></section>
+    <AreaFrame title="Gestão do Setor" subtitle="Produtividade, cumprimento de prazos e evolução da eficiência do Departamento Pessoal." icon={<BarChart3 />} smallHeader backTo="/area/pessoal" backLabel="Sair">
+      <div className="management-dashboard-toolbar"><div><strong>Painel gerencial</strong><span>Comparação com o período anterior de mesma duração.</span></div><label>Período<select value={days} onChange={(event) => setDays(Number(event.target.value))}><option value={7}>Últimos 7 dias</option><option value={30}>Últimos 30 dias</option><option value={90}>Últimos 90 dias</option></select></label></div>
+      {error && <section className="ops-panel management-dashboard-error">{error}</section>}
+      {!analytics && !error && <section className="ops-panel management-dashboard-error">Carregando indicadores...</section>}
+      {analytics && <div className="management-dashboard">
+        <section className="management-kpis">
+          <article><ClipboardList /><span>Demandas ativas {help("Quantidade de demandas que ainda não foram concluídas nem arquivadas.")}</span><strong>{analytics.summary.active}</strong><small>estoque atual do setor</small></article>
+          <article className={analytics.summary.overdue ? "danger" : ""}><Timer /><span>Atrasadas {help("Demandas abertas cuja data limite já passou.")}</span><strong>{analytics.summary.overdue}</strong><small>fora da data limite</small></article>
+          <article><CheckCircle2 /><span>Concluídas {help(`Demandas concluídas nos últimos ${analytics.periodDays} dias.`)}</span><strong>{analytics.summary.completed}</strong><small>no período selecionado</small></article>
+          <article className={analytics.summary.activeOnTimeRate < 80 ? "danger" : "positive"}><PackageCheck /><span>Ativas no prazo {help("Percentual das demandas abertas que ainda não ultrapassaram sua data limite.")}</span><strong>{analytics.summary.activeOnTimeRate.toLocaleString("pt-BR")}%</strong><small>{analytics.summary.active - analytics.summary.overdue} de {analytics.summary.active} demandas</small></article>
+          <article><PlayCircle /><span>Tempo médio {help("Média de dias entre a data da solicitação e a conclusão, considerando apenas as demandas concluídas no período.")}</span><strong>{analytics.summary.averageCycleDays.toLocaleString("pt-BR")}</strong><small>dias por demanda concluída</small></article>
+          <article className={analytics.summary.efficiencyChange < 0 ? "danger" : "positive"}><BarChart3 /><span>Eficiência {help("Variação do número de demandas concluídas em relação ao período anterior de mesma duração.")}</span><strong>{efficiencyLabel(analytics.summary.efficiencyChange)}</strong><small>volume contra período anterior</small></article>
+        </section>
+        <section className="management-dashboard-grid">
+          <section className="ops-panel management-trend"><div><h3>Entregas ao longo do período</h3><small>Quantidade de demandas concluídas por intervalo semanal.</small></div><div className="management-bars">{analytics.trend.map((item) => <article key={item.label}><strong>{item.completed}</strong><div><span style={{ height: `${Math.max(item.completed / maxTrend * 100, item.completed ? 8 : 2)}%` }} /></div><small>{item.label}</small></article>)}</div></section>
+          <section className="ops-panel management-stations"><div><h3>Desempenho por esteira</h3><small>Volume ativo, entregue e atrasado no período.</small></div>{analytics.stations.map((station) => <article key={station.stationId}><strong>{station.label}</strong><span><b>{station.active}</b> ativas</span><span><b>{station.completed}</b> concluídas</span><span className={station.overdue ? "danger" : ""}><b>{station.overdue}</b> atrasadas</span></article>)}</section>
+        </section>
+        <section className="ops-panel management-employees"><div className="customer-list-header"><div><h3>Produtividade por colaborador</h3><small>Resultados individuais no período e comparação com o período anterior.</small></div></div><div className="company-table-wrap"><table className="company-table"><thead><tr><th>Colaborador</th><th>Ativas</th><th>Concluídas</th><th>Atrasadas</th><th>No prazo</th><th>Tempo médio</th><th>Evolução</th></tr></thead><tbody>{analytics.employees.map((employee) => <tr key={employee.name}><td><strong>{employee.name}</strong></td><td>{employee.active}</td><td>{employee.completed}</td><td>{employee.overdue}</td><td>{employee.slaRate.toLocaleString("pt-BR")}%</td><td>{employee.averageCycleDays.toLocaleString("pt-BR")} dias</td><td><span className={`efficiency-badge ${employee.efficiencyChange < 0 ? "negative" : "positive"}`}>{efficiencyLabel(employee.efficiencyChange)}</span></td></tr>)}{analytics.employees.length === 0 && <tr><td colSpan={7} className="empty-state">Ainda não há tarefas atribuídas suficientes para análise individual.</td></tr>}</tbody></table></div></section>
+      </div>}
     </AreaFrame>
   );
 }
@@ -1011,18 +1031,23 @@ function ManagerReviewPage() {
 export function WorkstationPage() {
   const { areaId, stationId } = useParams();
   if (areaId === "pessoal" && stationId === "admissoes") return <AdmissionWorkstationPage />;
-  if (areaId === "pessoal" && stationId === "analise-gestor") return <ManagerReviewPage />;
+  if (areaId === "pessoal" && stationId === "analise-gestor") return <ManagerDashboardPage />;
   return <StandardWorkstationPage areaId={areaId} stationId={stationId} />;
 }
 
 function StandardWorkstationPage({ areaId, stationId }: { areaId?: string; stationId?: string }) {
   const navigate = useNavigate();
+  const map = useFilteredOperationMap();
+  const [searchParams, setSearchParams] = useSearchParams();
   const departmentId = areaId === "pessoal" ? "pessoal" : "contabil";
   const station = departmentCatalog[departmentId].stations.find((item) => item.id === stationId);
   const store = useOperationState();
   const { state, commit } = store;
   const stationKey = `${departmentId}:${stationId}`;
   const tasks = state.tasks.filter((task) => task.departmentId === departmentId && task.stationId === stationId && task.status !== "concluida");
+  const apiTasks = map.tasks.filter((task) => task.area_id === departmentId && task.station_id === stationId && task.status !== "done");
+  const selectedApiTaskId = Number(searchParams.get("task")) || null;
+  const selectedApiTask = apiTasks.find((task) => task.id === selectedApiTaskId);
   const [procedureText, setProcedureText] = useState(state.procedures.find((item) => item.stationKey === stationKey)?.text ?? "");
   const [activeTaskId, setActiveTaskId] = useState<string>("");
   const [stationSeconds, setStationSeconds] = useState(0);
@@ -1109,6 +1134,7 @@ function StandardWorkstationPage({ areaId, stationId }: { areaId?: string; stati
 
   return (
     <AreaFrame title={station?.title ?? "Estacao de trabalho"} subtitle="Ao entrar na estacao o tempo da estacao passa a contar. Ao iniciar uma tarefa, o tempo da tarefa tambem passa a contar." icon={<Timer />}>
+      {departmentId === "pessoal" && <section className="ops-panel workstation-api-queue"><div className="customer-list-header"><div><h3>{selectedApiTask ? `Demanda ${selectedApiTask.task_code ?? selectedApiTask.id}` : "Fila da esteira"}</h3><small>{selectedApiTask ? `${selectedApiTask.client_name} · ${selectedApiTask.employee_name ?? "sem colaborador informado"}` : "Selecione uma demanda para abrir seus detalhes nesta esteira."}</small></div></div><SortableTaskTable tasks={apiTasks} selectedTaskId={selectedApiTaskId} onSelectTask={(task) => setSearchParams({ task: String(task.id) })} /></section>}
       <section className="ops-grid station-workspace">
         <section className="ops-panel">
           <h3>Tempo em andamento</h3>

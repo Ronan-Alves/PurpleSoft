@@ -47,6 +47,8 @@ class TaskOut(BaseModel):
     assignee: str | None = None
     station_id: str | None = None
     requested_at: str | None = None
+    deadline: str | None = None
+    completed_at: str | None = None
     checklist_ready: bool = False
     customer_id: str | None = None
     employee_name: str | None = None
@@ -74,6 +76,47 @@ class PersonnelSettingsOut(PersonnelSettingsIn):
     pass
 
 
+class PersonnelAnalyticsSummary(BaseModel):
+    active: int
+    overdue: int
+    completed: int
+    slaRate: float
+    activeOnTimeRate: float
+    averageCycleDays: float
+    efficiencyChange: float
+
+
+class PersonnelAnalyticsTrendItem(BaseModel):
+    label: str
+    completed: int
+
+
+class PersonnelEmployeeMetric(BaseModel):
+    name: str
+    active: int
+    completed: int
+    overdue: int
+    slaRate: float
+    averageCycleDays: float
+    efficiencyChange: float
+
+
+class PersonnelStationMetric(BaseModel):
+    stationId: str
+    label: str
+    active: int
+    completed: int
+    overdue: int
+
+
+class PersonnelAnalyticsOut(BaseModel):
+    periodDays: int
+    summary: PersonnelAnalyticsSummary
+    trend: list[PersonnelAnalyticsTrendItem]
+    employees: list[PersonnelEmployeeMetric]
+    stations: list[PersonnelStationMetric]
+
+
 class PersonnelRequestIn(BaseModel):
     customerId: str
     stationId: str
@@ -99,10 +142,6 @@ class AdmissionWorkflowOut(BaseModel):
 class AdmissionWorkflowStepIn(BaseModel):
     status: str
     assignee: str | None = None
-
-
-class ManagerReviewIn(BaseModel):
-    decision: str
 
 
 class StationManualOut(BaseModel):

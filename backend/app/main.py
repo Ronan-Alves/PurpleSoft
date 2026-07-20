@@ -1,3 +1,4 @@
+from calendar import monthrange
 from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
@@ -65,12 +66,16 @@ from .schemas import (
     CustomerOut,
     LoginRequest,
     LoginResponse,
-    ManagerReviewIn,
     OperationMap,
     OfficeIn,
     OfficeOut,
     OfficesOut,
     PersonnelRequestIn,
+    PersonnelAnalyticsOut,
+    PersonnelAnalyticsSummary,
+    PersonnelAnalyticsTrendItem,
+    PersonnelEmployeeMetric,
+    PersonnelStationMetric,
     PersonnelSettingsIn,
     PersonnelSettingsOut,
     StationManualOut,
@@ -870,6 +875,87 @@ def update_personnel_settings(payload: PersonnelSettingsIn, _: dict[str, str] = 
     return personnel_settings_to_out(settings_row)
 
 
+def parse_metric_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed.astimezone(timezone.utc)
+    except ValueError:
+        return None
+
+
+@app.get("/personnel-analytics", response_model=PersonnelAnalyticsOut)
+def personnel_analytics(days: int = Query(default=30, ge=7, le=365), assignee: str | None = Query(default=None), operator: dict[str, str] = Depends(require_operator), db: Session = Depends(get_db)) -> PersonnelAnalyticsOut:
+    if not is_manager(operator):
+        raise HTTPException(status_code=403, detail="Somente o gestor pode acessar os indicadores do setor.")
+    now = datetime.now(timezone.utc)
+    current_start, previous_start = now - timedelta(days=days), now - timedelta(days=days * 2)
+    settings_row = db.get(PersonnelSettings, "default") or PersonnelSettings(id="default")
+    tasks = list(db.scalars(select(Task).where(Task.area_id == "pessoal", Task.station_id.is_not(None))).all())
+    if assignee:
+        tasks = [task for task in tasks if task.assignee == assignee]
+
+    def completion(task: Task) -> datetime | None:
+        return parse_metric_datetime(task.completed_at)
+
+    def completed_between(task: Task, start: datetime, end: datetime) -> bool:
+        value = completion(task)
+        return bool(value and start <= value < end)
+
+    def overdue(task: Task) -> bool:
+        deadline = task_deadline(task, settings_row, now)
+        return task.status != "done" and bool(deadline and deadline < now.date().isoformat())
+
+    def on_time(task: Task) -> bool:
+        deadline, value = task_deadline(task, settings_row, completion(task) or now), completion(task)
+        return bool(deadline and value and value.date().isoformat() <= deadline)
+
+    def cycle_days(task: Task) -> float | None:
+        value = completion(task)
+        if not value or not task.requested_at:
+            return None
+        try:
+            requested = datetime.strptime(task.requested_at, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            return max((value - requested).total_seconds() / 86400, 0)
+        except ValueError:
+            return None
+
+    def rate(current: int, previous: int) -> float:
+        if previous == 0:
+            return 100.0 if current else 0.0
+        return round(((current - previous) / previous) * 100, 1)
+
+    current_completed = [task for task in tasks if completed_between(task, current_start, now)]
+    previous_completed = [task for task in tasks if completed_between(task, previous_start, current_start)]
+    active_tasks = [task for task in tasks if task.status != "done"]
+    cycles = [value for task in current_completed if (value := cycle_days(task)) is not None]
+    sla_tasks = [task for task in current_completed if task_deadline(task, settings_row, completion(task) or now)]
+
+    trend: list[PersonnelAnalyticsTrendItem] = []
+    bucket_start = current_start
+    while bucket_start < now:
+        bucket_end = min(bucket_start + timedelta(days=7), now)
+        trend.append(PersonnelAnalyticsTrendItem(label=f"{bucket_start.day:02d}/{bucket_start.month:02d}", completed=sum(completed_between(task, bucket_start, bucket_end) for task in tasks)))
+        bucket_start = bucket_end
+
+    employee_names = sorted({task.assignee for task in tasks if task.assignee})
+    employee_metrics: list[PersonnelEmployeeMetric] = []
+    for name in employee_names:
+        assigned = [task for task in tasks if task.assignee == name]
+        completed_now = [task for task in assigned if completed_between(task, current_start, now)]
+        completed_before = [task for task in assigned if completed_between(task, previous_start, current_start)]
+        employee_cycles = [value for task in completed_now if (value := cycle_days(task)) is not None]
+        employee_sla = [task for task in completed_now if task_deadline(task, settings_row, completion(task) or now)]
+        employee_metrics.append(PersonnelEmployeeMetric(name=name, active=sum(task.status != "done" for task in assigned), completed=len(completed_now), overdue=sum(overdue(task) for task in assigned), slaRate=round(sum(on_time(task) for task in employee_sla) / len(employee_sla) * 100, 1) if employee_sla else 0, averageCycleDays=round(sum(employee_cycles) / len(employee_cycles), 1) if employee_cycles else 0, efficiencyChange=rate(len(completed_now), len(completed_before))))
+
+    station_labels = {"admissoes": "Admissões", "rescisoes": "Rescisões", "ferias": "Férias", "folha": "Folha de Pagamento"}
+    station_metrics = [PersonnelStationMetric(stationId=station_id, label=label, active=sum(task.status != "done" and task.station_id == station_id for task in tasks), completed=sum(task.station_id == station_id and completed_between(task, current_start, now) for task in tasks), overdue=sum(task.station_id == station_id and overdue(task) for task in tasks)) for station_id, label in station_labels.items()]
+
+    overdue_count = sum(overdue(task) for task in active_tasks)
+    return PersonnelAnalyticsOut(periodDays=days, summary=PersonnelAnalyticsSummary(active=len(active_tasks), overdue=overdue_count, completed=len(current_completed), slaRate=round(sum(on_time(task) for task in sla_tasks) / len(sla_tasks) * 100, 1) if sla_tasks else 0, activeOnTimeRate=round((len(active_tasks) - overdue_count) / len(active_tasks) * 100, 1) if active_tasks else 100, averageCycleDays=round(sum(cycles) / len(cycles), 1) if cycles else 0, efficiencyChange=rate(len(current_completed), len(previous_completed))), trend=trend, employees=employee_metrics, stations=station_metrics)
+
+
 @app.post("/personnel-requests", response_model=TaskOut, status_code=201)
 def create_personnel_request(
     payload: PersonnelRequestIn,
@@ -936,7 +1022,7 @@ def create_personnel_request(
 
 
 ADMISSION_STEPS = ["conference", "registration", "esocial", "contracts", "communication"]
-ADMISSION_STEP_LABELS = {"conference": "Conferência", "registration": "Cadastro", "esocial": "eSocial", "contracts": "Contratos", "communication": "Comunicação"}
+ADMISSION_STEP_LABELS = {"conference": "Checklist", "registration": "Cadastro", "esocial": "eSocial", "contracts": "Contratos", "communication": "Comunicação"}
 
 
 def admission_workflow_out(task: Task, db: Session) -> AdmissionWorkflowOut:
@@ -950,8 +1036,25 @@ def admission_workflow_out(task: Task, db: Session) -> AdmissionWorkflowOut:
     return AdmissionWorkflowOut(steps=[AdmissionWorkflowStepOut(stepKey=key, status=rows[key].status, assignee=rows[key].assignee, releasedAt=rows[key].released_at, completedAt=rows[key].completed_at) for key in ADMISSION_STEPS])
 
 
+def task_deadline(task: Task, settings_row: PersonnelSettings, reference: datetime | None = None) -> str | None:
+    if task.area_id != "pessoal" or not task.station_id or not task.requested_at:
+        return None
+    try:
+        requested_date = datetime.strptime(task.requested_at, "%Y-%m-%d")
+        if task.station_id == "folha":
+            current = reference or datetime.now(timezone.utc)
+            due_day = min(settings_row.payroll_due_day, monthrange(current.year, current.month)[1])
+            return datetime(current.year, current.month, due_day).date().isoformat()
+        sla_days = settings_row.admission_sla_days if task.station_id == "admissoes" else settings_row.termination_sla_days if task.station_id == "rescisoes" else settings_row.vacation_sla_days
+        return (requested_date + timedelta(days=sla_days)).date().isoformat()
+    except ValueError:
+        return None
+
+
 def task_out(task: Task, db: Session) -> TaskOut:
     result = TaskOut.model_validate(task, from_attributes=True)
+    settings_row = db.get(PersonnelSettings, "default") or PersonnelSettings(id="default")
+    result.deadline = task_deadline(task, settings_row)
     if task.area_id == "pessoal" and task.station_id == "admissoes":
         workflow_steps = db.scalars(select(AdmissionWorkflowStep.step_key).where(AdmissionWorkflowStep.task_id == task.id).order_by(AdmissionWorkflowStep.id)).all()
         step = db.scalar(select(AdmissionWorkflowStep.step_key).where(AdmissionWorkflowStep.task_id == task.id, AdmissionWorkflowStep.status != "done").order_by(AdmissionWorkflowStep.id))
@@ -1057,33 +1160,10 @@ def update_admission_workflow_step(task_id: int, step_key: str, payload: Admissi
                 next_row.status, next_row.released_at = "pending", now_iso()
                 db.add(TaskEvent(task_id=task_id, message=f"Etapa {ADMISSION_STEP_LABELS[next_row.step_key]} liberada.", occurred_at=now_iso()))
         else:
-            task.status = "manager_review"
-            db.add(TaskEvent(task_id=task_id, message="Admissão enviada para análise do gestor.", occurred_at=now_iso()))
+            task.status, task.completed_at = "done", now_iso()
+            db.add(TaskEvent(task_id=task_id, message="Admissão concluída e arquivada após a comunicação ao cliente.", occurred_at=now_iso()))
     db.commit()
     return admission_workflow_out(task, db)
-
-
-@app.post("/admissions/{task_id}/manager-review", response_model=TaskOut)
-def review_admission(task_id: int, payload: ManagerReviewIn, operator: dict[str, str] = Depends(require_operator), db: Session = Depends(get_db)) -> TaskOut:
-    if not is_manager(operator):
-        raise HTTPException(status_code=403, detail="Somente o gestor pode concluir esta análise.")
-    task = admission_task_or_404(task_id, db)
-    if task.status != "manager_review":
-        raise HTTPException(status_code=422, detail="Esta admissão não está aguardando análise do gestor.")
-    if payload.decision == "approve":
-        task.status = "done"
-        db.add(TaskEvent(task_id=task_id, message="Admissão aprovada pelo gestor e arquivada.", occurred_at=now_iso()))
-    elif payload.decision == "return":
-        communication = db.scalar(select(AdmissionWorkflowStep).where(AdmissionWorkflowStep.task_id == task_id, AdmissionWorkflowStep.step_key == "communication"))
-        if communication:
-            communication.status, communication.completed_at = "pending", None
-        task.status = "pending"
-        db.add(TaskEvent(task_id=task_id, message="Admissão devolvida pelo gestor para correção na etapa Comunicação.", occurred_at=now_iso()))
-    else:
-        raise HTTPException(status_code=422, detail="Decisão de análise inválida.")
-    db.commit()
-    db.refresh(task)
-    return task_out(task, db)
 
 
 def task_note_out(note: TaskNote) -> TaskNoteOut:

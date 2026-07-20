@@ -32,6 +32,8 @@ export type Task = {
   assignee?: string | null;
   station_id?: string | null;
   requested_at?: string | null;
+  deadline?: string | null;
+  completed_at?: string | null;
   checklist_ready?: boolean;
   customer_id?: string | null;
   employee_name?: string | null;
@@ -246,7 +248,7 @@ export const departmentCatalog = {
       { id: "rescisoes", title: "Rescisoes" },
       { id: "ferias", title: "Ferias" },
       { id: "folha", title: "Folha de Pagamento" },
-      { id: "analise-gestor", title: "Analise do Gestor" }
+      { id: "analise-gestor", title: "Gestão do Setor" }
     ]
   },
   financeiro: {

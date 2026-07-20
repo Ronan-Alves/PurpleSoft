@@ -156,6 +156,7 @@ class Task(Base):
     assignee: Mapped[str | None] = mapped_column(String(120))
     station_id: Mapped[str | None] = mapped_column(String(80), index=True)
     requested_at: Mapped[str | None] = mapped_column(String(20))
+    completed_at: Mapped[str | None] = mapped_column(String(40))
     checklist_ready: Mapped[bool] = mapped_column(nullable=False, default=False)
     customer_id: Mapped[str | None] = mapped_column(ForeignKey("customers.id"), index=True)
     employee_name: Mapped[str | None] = mapped_column(String(160))
