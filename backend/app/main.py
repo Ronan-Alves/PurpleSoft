@@ -5,7 +5,7 @@ from secrets import token_urlsafe
 from unicodedata import normalize
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.responses import FileResponse, Response
@@ -31,6 +31,7 @@ from .models import (
     FactoryLayout,
     Office,
     PersonnelSettings,
+    StationManual,
     Task,
     TaskNote,
     TaskEvent,
@@ -72,6 +73,8 @@ from .schemas import (
     PersonnelRequestIn,
     PersonnelSettingsIn,
     PersonnelSettingsOut,
+    StationManualOut,
+    StationManualsOut,
     TaskOut,
     TaskNoteIn,
     TaskNoteOut,
@@ -365,6 +368,67 @@ def admission_required_documents_manual(download: bool = False) -> FileResponse:
         raise HTTPException(status_code=404, detail="Manual nao localizado.")
     disposition = "attachment" if download else "inline"
     return FileResponse(path, media_type="application/pdf", headers={"Content-Disposition": f'{disposition}; filename="manual-admissao.pdf"'})
+
+
+def station_manual_out(manual: StationManual) -> StationManualOut:
+    return StationManualOut(id=manual.id, title=manual.title, description=manual.description, fileName=manual.file_name, contentType=manual.content_type, uploadedAt=manual.uploaded_at, uploadedBy=manual.uploaded_by)
+
+
+@app.get("/station-manuals", response_model=StationManualsOut)
+def list_station_manuals(station_key: str = Query(min_length=1, max_length=120), _: dict[str, str] = Depends(require_operator), db: Session = Depends(get_db)) -> StationManualsOut:
+    manuals = db.scalars(select(StationManual).where(StationManual.station_key == station_key).order_by(StationManual.uploaded_at.desc())).all()
+    return StationManualsOut(manuals=[station_manual_out(manual) for manual in manuals])
+
+
+@app.post("/station-manuals", response_model=StationManualOut, status_code=201)
+async def upload_station_manual(station_key: str = Query(min_length=1, max_length=120), title: str = Form(min_length=1, max_length=180), description: str = Form(default="", max_length=500), file: UploadFile = File(...), operator: dict[str, str] = Depends(require_operator), db: Session = Depends(get_db)) -> StationManualOut:
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=422, detail="Selecione um arquivo para enviar.")
+    if len(content) > 25 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="O arquivo deve ter no máximo 25 MB.")
+    manual = StationManual(station_key=station_key, title=title.strip(), description=description.strip(), file_name=file.filename or "manual", content_type=file.content_type or "application/octet-stream", content=content, uploaded_at=now_iso(), uploaded_by=operator["sub"])
+    db.add(manual)
+    db.commit()
+    db.refresh(manual)
+    return station_manual_out(manual)
+
+
+@app.put("/station-manuals/{manual_id}", response_model=StationManualOut)
+async def update_station_manual(manual_id: int, title: str = Form(min_length=1, max_length=180), description: str = Form(default="", max_length=500), file: UploadFile | None = File(default=None), _: dict[str, str] = Depends(require_operator), db: Session = Depends(get_db)) -> StationManualOut:
+    manual = db.get(StationManual, manual_id)
+    if not manual:
+        raise HTTPException(status_code=404, detail="Manual não encontrado.")
+    manual.title, manual.description = title.strip(), description.strip()
+    if file:
+        content = await file.read()
+        if not content:
+            raise HTTPException(status_code=422, detail="O arquivo selecionado está vazio.")
+        if len(content) > 25 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="O arquivo deve ter no máximo 25 MB.")
+        manual.file_name, manual.content_type, manual.content = file.filename or "manual", file.content_type or "application/octet-stream", content
+    manual.uploaded_at = now_iso()
+    db.commit()
+    db.refresh(manual)
+    return station_manual_out(manual)
+
+
+@app.delete("/station-manuals/{manual_id}", status_code=204)
+def delete_station_manual(manual_id: int, _: dict[str, str] = Depends(require_operator), db: Session = Depends(get_db)) -> None:
+    manual = db.get(StationManual, manual_id)
+    if not manual:
+        raise HTTPException(status_code=404, detail="Manual não encontrado.")
+    db.delete(manual)
+    db.commit()
+
+
+@app.get("/station-manuals/{manual_id}/file")
+def station_manual_file(manual_id: int, download: bool = False, _: dict[str, str] = Depends(require_operator), db: Session = Depends(get_db)) -> Response:
+    manual = db.get(StationManual, manual_id)
+    if not manual:
+        raise HTTPException(status_code=404, detail="Manual não encontrado.")
+    disposition = "attachment" if download else "inline"
+    return Response(content=manual.content, media_type=manual.content_type, headers={"Content-Disposition": f'{disposition}; filename="{manual.file_name}"'})
 
 
 @app.post("/auth/login", response_model=LoginResponse)

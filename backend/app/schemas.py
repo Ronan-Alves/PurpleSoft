@@ -105,6 +105,20 @@ class ManagerReviewIn(BaseModel):
     decision: str
 
 
+class StationManualOut(BaseModel):
+    id: int
+    title: str
+    description: str
+    fileName: str
+    contentType: str
+    uploadedAt: str
+    uploadedBy: str
+
+
+class StationManualsOut(BaseModel):
+    manuals: list[StationManualOut]
+
+
 class AdmissionChecklistIn(BaseModel):
     form: dict[str, str | bool]
     released: bool = False

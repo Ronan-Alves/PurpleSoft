@@ -208,6 +208,20 @@ class AdmissionAttachment(Base):
     updated_at: Mapped[str] = mapped_column(String(40), nullable=False)
 
 
+class StationManual(Base):
+    __tablename__ = "station_manuals"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    station_key: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(180), nullable=False)
+    description: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    file_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(120), nullable=False, default="application/octet-stream")
+    content: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    uploaded_at: Mapped[str] = mapped_column(String(40), nullable=False)
+    uploaded_by: Mapped[str] = mapped_column(String(160), nullable=False)
+
+
 class TaskNote(Base):
     __tablename__ = "task_notes"
 

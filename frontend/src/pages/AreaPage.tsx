@@ -555,6 +555,7 @@ function DepartmentArea({ departmentId, store }: { departmentId: "contabil" | "p
   const department = departmentCatalog[departmentId];
   const map = useFilteredOperationMap();
   const [accountingAssigneeFilter, setAccountingAssigneeFilter] = useState("todos");
+  const [personnelQueueFilter, setPersonnelQueueFilter] = useState<"checklist" | "available" | "warning" | "overdue" | null>(null);
   const [personnelSettings, setPersonnelSettings] = useState({ admissionSlaDays: 1, terminationSlaDays: 2, vacationSlaDays: 3, payrollDueDay: 25, criticalStartDay: 20, criticalEndDay: 25, warningDays: 1 });
   const [settingsSaved, setSettingsSaved] = useState("");
 
@@ -583,7 +584,7 @@ function DepartmentArea({ departmentId, store }: { departmentId: "contabil" | "p
       <AreaFrame title="Departamento Contabil" subtitle="Acompanhe as folhas por escritorio e organize a fila geral de prioridade do setor." icon={<Boxes />} smallHeader backTo="/" backLabel="Sair">
         <section className="accounting-overview">
           <section className="ops-panel"><div className="customer-list-header"><div><h3>Progresso por escritorio</h3><small>Folhas de todas as empresas com servico contabil</small></div></div><div className="office-progress-list">{officeProgress.map(({ office, total, done }) => { const missing = Math.max(total - done, 0); return <article key={office.id}><div><strong>{office.name}</strong><small>{done} de {total} folhas concluidas</small></div><div className="office-progress-bar"><span style={{ width: `${total ? (done / total) * 100 : 0}%` }} /></div><strong className={missing ? "missing" : "complete"}>{missing} faltando</strong></article>; })}</div></section>
-          <section className="ops-panel accounting-priority"><div className="customer-list-header"><div><h3>Fila geral de prioridade</h3><small>{filteredTasks.length} folhas no filtro atual</small></div><label className="inline-filter">Responsavel<select value={accountingAssigneeFilter} onChange={(event) => setAccountingAssigneeFilter(event.target.value)}><option value="todos">Todos</option><option value="sem_responsavel">Sem responsavel</option>{assignees.map((assignee) => <option key={assignee} value={assignee}>{assignee}</option>)}</select></label></div><div className="company-table-wrap"><table className="company-table accounting-queue"><thead><tr><th>Prioridade</th><th>Empresa</th><th>Responsavel</th><th>Status</th></tr></thead><tbody>{filteredTasks.map((task) => <tr key={task.id}><td><span className={`priority-badge ${task.priority}`}>{task.priority}</span></td><td><strong>{task.client_name}</strong></td><td>{task.assignee ?? <span className="unassigned">Sem responsavel</span>}</td><td>{task.status}</td></tr>)}</tbody></table></div></section>
+          <section className="ops-panel accounting-priority"><div className="customer-list-header"><div><h3>Fila geral de prioridade</h3><small>{filteredTasks.length} folhas no filtro atual</small></div><label className="inline-filter">Responsavel<select value={accountingAssigneeFilter} onChange={(event) => setAccountingAssigneeFilter(event.target.value)}><option value="todos">Todos</option><option value="sem_responsavel">Sem responsavel</option>{assignees.map((assignee) => <option key={assignee} value={assignee}>{assignee}</option>)}</select></label></div><div className="company-table-wrap"><table className="company-table accounting-queue"><thead><tr><th>Prioridade</th><th>Empresa</th><th>Responsavel</th></tr></thead><tbody>{filteredTasks.map((task) => <tr key={task.id}><td><span className={`priority-badge ${task.priority}`}>{task.priority}</span></td><td><strong>{task.client_name}</strong></td><td>{task.assignee ?? <span className="unassigned">Sem responsavel</span>}</td></tr>)}</tbody></table></div></section>
         </section>
       </AreaFrame>
     );
@@ -607,15 +608,17 @@ function DepartmentArea({ departmentId, store }: { departmentId: "contabil" | "p
     const globalAvailable = openPersonnelTasks.filter((task) => task.checklist_ready && task.status === "pending").length;
     const globalWarning = openPersonnelTasks.filter((task) => task.checklist_ready && daysToDeadline(task, task.station_id!) >= 0 && daysToDeadline(task, task.station_id!) <= personnelSettings.warningDays).length;
     const globalOverdue = openPersonnelTasks.filter((task) => task.checklist_ready && daysToDeadline(task, task.station_id!) < 0).length;
+    const queueTasks = openPersonnelTasks.filter((task) => {
+      if (personnelQueueFilter === "checklist") return !task.checklist_ready;
+      if (personnelQueueFilter === "available") return task.checklist_ready && task.status === "pending";
+      if (personnelQueueFilter === "warning") return task.checklist_ready && daysToDeadline(task, task.station_id!) >= 0 && daysToDeadline(task, task.station_id!) <= personnelSettings.warningDays;
+      if (personnelQueueFilter === "overdue") return task.checklist_ready && daysToDeadline(task, task.station_id!) < 0;
+      return true;
+    });
+    const toggleQueueFilter = (filter: NonNullable<typeof personnelQueueFilter>) => setPersonnelQueueFilter((current) => current === filter ? null : filter);
     return (
       <AreaFrame title="Departamento Pessoal" subtitle="Visao fabril das filas, prioridades e liberacoes de cada linha de producao." icon={<UsersRound />} smallHeader backTo="/" backLabel="Sair">
         <div className="personnel-overview-actions"><div><strong>Demandas pontuais</strong><span>Registre admissões, rescisões e férias para entrarem na esteira correta.</span></div><Link to="/area/pessoal/solicitacoes/nova"><Plus size={17} /> Nova solicitação</Link></div>
-        <section className="personnel-summary">
-          <article><ClipboardList /><span>Checklist pendente</span><strong>{globalChecklistPending}</strong></article>
-          <article><CheckCircle2 /><span>Liberadas</span><strong>{globalAvailable}</strong></article>
-          <article><Timer /><span>Proximas do prazo</span><strong>{globalWarning}</strong></article>
-          <article><PlayCircle /><span>Atrasadas</span><strong>{globalOverdue}</strong></article>
-        </section>
         {criticalPeriod && <div className="closing-alert"><strong>Periodo critico de fechamento ativo</strong><span>As tarefas do Departamento Pessoal devem receber prioridade reforcada ate o dia {personnelSettings.criticalEndDay}.</span></div>}
         <details className="personnel-settings-panel"><summary>Configurar prazos e periodo critico</summary><div className="settings-grid"><label>Admissao (dias)<input type="number" min="1" value={personnelSettings.admissionSlaDays} onChange={(event) => setPersonnelSettings({ ...personnelSettings, admissionSlaDays: Number(event.target.value) })} /></label><label>Rescisao (dias)<input type="number" min="1" value={personnelSettings.terminationSlaDays} onChange={(event) => setPersonnelSettings({ ...personnelSettings, terminationSlaDays: Number(event.target.value) })} /></label><label>Ferias (dias)<input type="number" min="1" value={personnelSettings.vacationSlaDays} onChange={(event) => setPersonnelSettings({ ...personnelSettings, vacationSlaDays: Number(event.target.value) })} /></label><label>Fechar folha ate o dia<input type="number" min="1" max="31" value={personnelSettings.payrollDueDay} onChange={(event) => setPersonnelSettings({ ...personnelSettings, payrollDueDay: Number(event.target.value) })} /></label><label>Inicio periodo critico<input type="number" min="1" max="31" value={personnelSettings.criticalStartDay} onChange={(event) => setPersonnelSettings({ ...personnelSettings, criticalStartDay: Number(event.target.value) })} /></label><label>Fim periodo critico<input type="number" min="1" max="31" value={personnelSettings.criticalEndDay} onChange={(event) => setPersonnelSettings({ ...personnelSettings, criticalEndDay: Number(event.target.value) })} /></label><label>Alertar antes (dias)<input type="number" min="0" value={personnelSettings.warningDays} onChange={(event) => setPersonnelSettings({ ...personnelSettings, warningDays: Number(event.target.value) })} /></label><button type="button" onClick={savePersonnelSettings}><Save size={16} /> Salvar configuracoes</button>{settingsSaved && <span>{settingsSaved}</span>}</div></details>
         <section className="personnel-alert-lanes">
@@ -633,7 +636,13 @@ function DepartmentArea({ departmentId, store }: { departmentId: "contabil" | "p
           })}
           <Link className={`personnel-alert-card ${managerReviewTasks.length ? "warning" : "normal"}`} to="/area/pessoal/station/analise-gestor"><header><div><span className="machine-light" /><strong>Análise do Gestor</strong></div><span>{managerReviewTasks.length} peça(s)</span></header><div className="alert-numbers"><div className="warning"><strong>{managerReviewTasks.length}</strong><span>aguardando análise</span></div></div><footer><span>Saída de qualidade após a entrega ao cliente</span><strong>Abrir ponto de análise →</strong></footer></Link>
         </section>
-        <section className="ops-panel personnel-task-queue"><div className="customer-list-header"><div><h3>Fila de demandas</h3><small>Clique em qualquer coluna para ordenar a fila operacional.</small></div></div><SortableTaskTable tasks={openPersonnelTasks} /></section>
+        <section className="personnel-summary personnel-queue-filters" aria-label="Filtros da fila de demandas">
+          <button className={personnelQueueFilter === "checklist" ? "active" : ""} type="button" onClick={() => toggleQueueFilter("checklist")}><ClipboardList /><span>Checklist pendente</span><strong>{globalChecklistPending}</strong></button>
+          <button className={personnelQueueFilter === "available" ? "active" : ""} type="button" onClick={() => toggleQueueFilter("available")}><CheckCircle2 /><span>Liberadas</span><strong>{globalAvailable}</strong></button>
+          <button className={personnelQueueFilter === "warning" ? "active" : ""} type="button" onClick={() => toggleQueueFilter("warning")}><Timer /><span>Próximas do prazo</span><strong>{globalWarning}</strong></button>
+          <button className={personnelQueueFilter === "overdue" ? "active" : ""} type="button" onClick={() => toggleQueueFilter("overdue")}><PlayCircle /><span>Atrasadas</span><strong>{globalOverdue}</strong></button>
+        </section>
+        <section className="ops-panel personnel-task-queue"><div className="customer-list-header"><div><h3>Fila de demandas</h3><small>{personnelQueueFilter ? `${queueTasks.length} demanda(s) no filtro selecionado. Clique novamente no filtro para limpar.` : "Clique em qualquer coluna para ordenar a fila operacional."}</small></div>{personnelQueueFilter && <button className="secondary-button" type="button" onClick={() => setPersonnelQueueFilter(null)}>Limpar filtro</button>}</div><SortableTaskTable tasks={queueTasks} /></section>
       </AreaFrame>
     );
   }
@@ -899,13 +908,77 @@ function AdmissionWorkstationPage() {
 }
 
 export function AdmissionManualsPage({ onBack }: { onBack?: () => void } = {}) {
-  const manuals = [{ id: "required-documents", title: "Documentacao necessaria para admissao", description: "Checklist enviado pelo escritorio. Para este fluxo, utilize a pagina 1.", url: `${API_URL}/manuals/admission-required-documents` }];
-  const [selectedManualId, setSelectedManualId] = useState(manuals[0].id);
+  type ManualItem = { id: string; title: string; description: string; fileName: string; contentType: string; baseUrl?: string; uploadedBy?: string };
+  const baseManual: ManualItem = { id: "required-documents", title: "Documentação necessária para admissão", description: "Checklist enviado pelo escritório. Para este fluxo, utilize a página 1.", fileName: "manual-admissao.pdf", contentType: "application/pdf", baseUrl: `${API_URL}/manuals/admission-required-documents` };
+  const [manuals, setManuals] = useState<ManualItem[]>([baseManual]);
+  const [selectedManualId, setSelectedManualId] = useState(baseManual.id);
+  const [previewUrl, setPreviewUrl] = useState(baseManual.baseUrl!);
+  const [uploadTitle, setUploadTitle] = useState("");
+  const [uploadDescription, setUploadDescription] = useState("");
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [editingManualId, setEditingManualId] = useState<string | null>(null);
+  const [uploadMessage, setUploadMessage] = useState("");
+  const [uploading, setUploading] = useState(false);
   const selectedManual = manuals.find((manual) => manual.id === selectedManualId) ?? manuals[0];
+
+  useEffect(() => {
+    fetch(`${API_URL}/station-manuals?station_key=${encodeURIComponent("pessoal:admissoes")}`, { headers: authHeaders() }).then((response) => response.ok ? response.json() : { manuals: [] }).then((body) => setManuals([baseManual, ...(body.manuals ?? []).map((manual: { id: number; title: string; description: string; fileName: string; contentType: string; uploadedBy: string }) => ({ ...manual, id: String(manual.id) }))])).catch(() => setManuals([baseManual]));
+  }, []);
+
+  useEffect(() => {
+    if (!selectedManual) return;
+    if (selectedManual.baseUrl) { setPreviewUrl(selectedManual.baseUrl); return; }
+    let objectUrl = "";
+    let cancelled = false;
+    fetch(`${API_URL}/station-manuals/${selectedManual.id}/file`, { headers: authHeaders() }).then((response) => response.ok ? response.blob() : null).then((blob) => {
+      if (!blob || cancelled) return;
+      objectUrl = URL.createObjectURL(blob);
+      setPreviewUrl(objectUrl);
+    }).catch(() => setPreviewUrl(""));
+    return () => { cancelled = true; if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [selectedManualId]);
+
+  async function uploadManual(event: React.FormEvent) {
+    event.preventDefault();
+    if (!uploadTitle.trim() || (!editingManualId && !uploadFile)) { setUploadMessage(editingManualId ? "Informe o título do manual." : "Informe o título e selecione o arquivo."); return; }
+    setUploading(true); setUploadMessage("");
+    const payload = new FormData();
+    payload.append("title", uploadTitle.trim()); payload.append("description", uploadDescription.trim()); if (uploadFile) payload.append("file", uploadFile);
+    const endpoint = editingManualId ? `${API_URL}/station-manuals/${editingManualId}` : `${API_URL}/station-manuals?station_key=${encodeURIComponent("pessoal:admissoes")}`;
+    const response = await fetch(endpoint, { method: editingManualId ? "PUT" : "POST", headers: authHeaders(), body: payload });
+    if (!response.ok) { const body = await response.json().catch(() => null) as { detail?: string } | null; setUploadMessage(body?.detail ?? "Não foi possível anexar o manual."); setUploading(false); return; }
+    const saved = await response.json();
+    const item: ManualItem = { id: String(saved.id), title: saved.title, description: saved.description, fileName: saved.fileName, contentType: saved.contentType, uploadedBy: saved.uploadedBy };
+    setManuals((current) => editingManualId ? current.map((manual) => manual.id === item.id ? item : manual) : [current[0], item, ...current.slice(1)]); setSelectedManualId(item.id); setUploadTitle(""); setUploadDescription(""); setUploadFile(null); setEditingManualId(null); setUploadMessage(editingManualId ? "Manual atualizado com sucesso." : "Manual anexado com sucesso."); setUploading(false);
+  }
+
+  function startEditingManual() {
+    if (!selectedManual || selectedManual.baseUrl) return;
+    setEditingManualId(selectedManual.id); setUploadTitle(selectedManual.title); setUploadDescription(selectedManual.description); setUploadFile(null); setUploadMessage("Você pode manter o arquivo atual ou selecionar outro.");
+  }
+
+  function cancelManualEditing() {
+    setEditingManualId(null); setUploadTitle(""); setUploadDescription(""); setUploadFile(null); setUploadMessage("");
+  }
+
+  async function deleteManual() {
+    if (!selectedManual || selectedManual.baseUrl || !window.confirm(`Excluir o manual “${selectedManual.title}”?`)) return;
+    const response = await fetch(`${API_URL}/station-manuals/${selectedManual.id}`, { method: "DELETE", headers: authHeaders() });
+    if (!response.ok) { setUploadMessage("Não foi possível excluir o manual."); return; }
+    setManuals((current) => current.filter((manual) => manual.id !== selectedManual.id)); setSelectedManualId(baseManual.id); cancelManualEditing(); setUploadMessage("Manual excluído.");
+  }
+
+  function downloadManual() {
+    if (!previewUrl || !selectedManual) return;
+    const link = document.createElement("a"); link.href = selectedManual.baseUrl ? `${selectedManual.baseUrl}?download=true` : previewUrl; link.download = selectedManual.fileName; link.click();
+  }
+
+  const canPreview = selectedManual?.contentType === "application/pdf" || selectedManual?.contentType.startsWith("image/") || selectedManual?.contentType.startsWith("text/");
   return (
-    <AreaFrame title="Manuais de Admissao" subtitle="Arquivos de apoio vinculados a esta esteira de trabalho." icon={<FileText />} smallHeader>
-      <div className="manual-page-actions">{onBack ? <button type="button" onClick={onBack}><ArrowLeft size={17} /> Voltar para a admissao</button> : <Link to="/area/pessoal/station/admissoes"><ArrowLeft size={17} /> Voltar para a admissao</Link>}</div>
-      <section className="ops-panel manual-library"><nav>{manuals.map((manual) => <button className={selectedManualId === manual.id ? "active" : ""} type="button" key={manual.id} onClick={() => setSelectedManualId(manual.id)}><FileText size={18} /><span><strong>{manual.title}</strong><small>{manual.description}</small></span></button>)}</nav><div className="manual-viewer"><div><strong>{selectedManual.title}</strong><span><a href={`${selectedManual.url}#page=1`} target="_blank" rel="noreferrer">Abrir em outra aba</a><a href={`${selectedManual.url}?download=true`}>Baixar PDF</a></span></div><iframe title={selectedManual.title} src={`${selectedManual.url}#page=1&view=FitH`} /></div></section>
+    <AreaFrame title="Manuais de Admissão" subtitle="Arquivos de apoio vinculados a esta esteira de trabalho." icon={<FileText />} smallHeader>
+      <div className="manual-page-actions">{onBack ? <button type="button" onClick={onBack}><ArrowLeft size={17} /> Voltar para a admissão</button> : <Link to="/area/pessoal/station/admissoes"><ArrowLeft size={17} /> Voltar para a admissão</Link>}</div>
+      <form className="ops-panel manual-upload-form" onSubmit={uploadManual}><div><strong>{editingManualId ? "Editar manual" : "Anexar novo manual"}</strong><small>{editingManualId ? "Altere os dados ou substitua o arquivo atual." : "O arquivo ficará disponível para todos os usuários desta esteira."}</small></div><label>Título<input value={uploadTitle} onChange={(event) => setUploadTitle(event.target.value)} placeholder="Nome do procedimento ou orientação" /></label><label>Descrição<input value={uploadDescription} onChange={(event) => setUploadDescription(event.target.value)} placeholder="Quando este manual deve ser utilizado" /></label><label className="manual-file-input"><input type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.odt,.txt,image/*" onChange={(event) => setUploadFile(event.target.files?.[0] ?? null)} /><Upload size={17} /> {uploadFile?.name ?? (editingManualId ? "Manter arquivo atual" : "Selecionar arquivo")}</label><div className="manual-form-actions">{editingManualId && <button type="button" onClick={cancelManualEditing}>Cancelar</button>}<button type="submit" disabled={uploading}>{uploading ? "Salvando..." : editingManualId ? "Salvar alterações" : "Anexar manual"}</button></div>{uploadMessage && <span>{uploadMessage}</span>}</form>
+      <section className="ops-panel manual-library"><nav>{manuals.map((manual) => <button className={selectedManualId === manual.id ? "active" : ""} type="button" key={manual.id} onClick={() => setSelectedManualId(manual.id)}><FileText size={18} /><span><strong>{manual.title}</strong><small>{manual.description || manual.fileName}</small></span></button>)}</nav><div className="manual-viewer"><div><strong>{selectedManual.title}</strong><span>{!selectedManual.baseUrl && <button type="button" onClick={startEditingManual}>Editar</button>}{!selectedManual.baseUrl && <button className="manual-delete-button" type="button" onClick={() => void deleteManual()}>Excluir</button>}{canPreview && previewUrl && <button type="button" onClick={() => window.open(`${previewUrl}${selectedManual.baseUrl ? "#page=1" : ""}`, "_blank")}>Abrir em outra aba</button>}<button type="button" onClick={downloadManual}>Baixar arquivo</button></span></div>{canPreview ? previewUrl ? <iframe title={selectedManual.title} src={`${previewUrl}${selectedManual.baseUrl ? "#page=1&view=FitH" : ""}`} /> : <div className="manual-preview-message">Carregando manual...</div> : <div className="manual-preview-message"><FileText size={36} /><strong>Este formato deve ser baixado para visualização.</strong><button type="button" onClick={downloadManual}>Baixar {selectedManual.fileName}</button></div>}</div></section>
     </AreaFrame>
   );
 }

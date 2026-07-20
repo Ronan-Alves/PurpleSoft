@@ -1944,7 +1944,8 @@ a {
   margin-bottom: 14px;
 }
 
-.personnel-summary article {
+.personnel-summary article,
+.personnel-summary > button {
   display: grid;
   grid-template-columns: auto 1fr auto;
   align-items: center;
@@ -1955,6 +1956,11 @@ a {
   background: #fff;
   color: #53647a;
 }
+
+.personnel-summary > button { width: 100%; font: inherit; text-align: left; cursor: pointer; transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease; }
+.personnel-summary > button:hover { border-color: #8fb7e4; transform: translateY(-1px); }
+.personnel-summary > button.active { border-color: #236cd1; background: #edf5ff; box-shadow: 0 0 0 2px rgb(35 108 209 / 12%); }
+.personnel-queue-filters { margin-top: 14px; margin-bottom: 8px; }
 
 .personnel-summary svg { color: #236cd1; }
 .personnel-summary strong { color: #14213d; font-size: 1.45rem; }
@@ -2133,7 +2139,22 @@ a {
 .manual-viewer > div { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 11px; background: #f4f8fc; }
 .manual-viewer > div span { display: flex; gap: 10px; }
 .manual-viewer a { color: #236cd1; font-size: 0.74rem; font-weight: 900; }
+.manual-viewer button { border: 0; background: transparent; color: #236cd1; font-size: 0.74rem; font-weight: 900; cursor: pointer; }
 .manual-viewer iframe { display: block; width: 100%; height: 520px; border: 0; background: #e7edf3; }
+.manual-upload-form { display: grid; grid-template-columns: minmax(190px, 0.8fr) repeat(2, minmax(170px, 1fr)) auto auto; align-items: end; gap: 10px; }
+.manual-upload-form > div { display: grid; gap: 3px; }
+.manual-upload-form > div small { color: #63738a; font-size: 0.72rem; }
+.manual-upload-form label { display: grid; gap: 4px; color: #40536d; font-size: 0.72rem; font-weight: 800; }
+.manual-upload-form input { min-width: 0; height: 36px; border: 1px solid #cad8e6; border-radius: 7px; padding: 0 9px; }
+.manual-form-actions { display: flex !important; align-items: center; gap: 6px !important; }
+.manual-form-actions button { height: 36px; border: 1px solid #c7d5e5; border-radius: 7px; padding: 0 12px; background: #fff; color: #40536d; font-weight: 900; cursor: pointer; white-space: nowrap; }
+.manual-form-actions button:last-child { border-color: #236cd1; background: #236cd1; color: #fff; }
+.manual-upload-form > span { grid-column: 1 / -1; color: #40536d; font-size: 0.76rem; }
+.manual-file-input { display: flex !important; align-items: center; justify-content: center; min-width: 150px; height: 36px; border: 1px dashed #8aa7c3; border-radius: 7px; padding: 0 10px; background: #f7fbff; cursor: pointer; }
+.manual-file-input input { display: none; }
+.manual-preview-message { min-height: 420px; flex-direction: column; justify-content: center !important; color: #63738a; text-align: center; }
+.manual-viewer .manual-delete-button { color: #c43f46; }
+@media (max-width: 1100px) { .manual-upload-form { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .admission-document-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 8px 0; }
 .admission-documents-panel summary { cursor: pointer; color: #263a55; font-size: .88rem; font-weight: 900; }
 .admission-documents-panel[open] summary { margin-bottom: 8px; }
