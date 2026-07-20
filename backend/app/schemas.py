@@ -101,6 +101,10 @@ class AdmissionWorkflowStepIn(BaseModel):
     assignee: str | None = None
 
 
+class ManagerReviewIn(BaseModel):
+    decision: str
+
+
 class AdmissionChecklistIn(BaseModel):
     form: dict[str, str | bool]
     released: bool = False

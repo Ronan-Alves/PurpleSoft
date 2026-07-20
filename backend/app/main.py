@@ -64,6 +64,7 @@ from .schemas import (
     CustomerOut,
     LoginRequest,
     LoginResponse,
+    ManagerReviewIn,
     OperationMap,
     OfficeIn,
     OfficeOut,
@@ -888,8 +889,9 @@ def admission_workflow_out(task: Task, db: Session) -> AdmissionWorkflowOut:
 def task_out(task: Task, db: Session) -> TaskOut:
     result = TaskOut.model_validate(task, from_attributes=True)
     if task.area_id == "pessoal" and task.station_id == "admissoes":
+        workflow_steps = db.scalars(select(AdmissionWorkflowStep.step_key).where(AdmissionWorkflowStep.task_id == task.id).order_by(AdmissionWorkflowStep.id)).all()
         step = db.scalar(select(AdmissionWorkflowStep.step_key).where(AdmissionWorkflowStep.task_id == task.id, AdmissionWorkflowStep.status != "done").order_by(AdmissionWorkflowStep.id))
-        result.workflow_stage = step or "completed"
+        result.workflow_stage = step or ("completed" if workflow_steps else "conference")
     return result
 
 
@@ -990,8 +992,34 @@ def update_admission_workflow_step(task_id: int, step_key: str, payload: Admissi
             if next_row and next_row.status == "locked":
                 next_row.status, next_row.released_at = "pending", now_iso()
                 db.add(TaskEvent(task_id=task_id, message=f"Etapa {ADMISSION_STEP_LABELS[next_row.step_key]} liberada.", occurred_at=now_iso()))
+        else:
+            task.status = "manager_review"
+            db.add(TaskEvent(task_id=task_id, message="Admissão enviada para análise do gestor.", occurred_at=now_iso()))
     db.commit()
     return admission_workflow_out(task, db)
+
+
+@app.post("/admissions/{task_id}/manager-review", response_model=TaskOut)
+def review_admission(task_id: int, payload: ManagerReviewIn, operator: dict[str, str] = Depends(require_operator), db: Session = Depends(get_db)) -> TaskOut:
+    if not is_manager(operator):
+        raise HTTPException(status_code=403, detail="Somente o gestor pode concluir esta análise.")
+    task = admission_task_or_404(task_id, db)
+    if task.status != "manager_review":
+        raise HTTPException(status_code=422, detail="Esta admissão não está aguardando análise do gestor.")
+    if payload.decision == "approve":
+        task.status = "done"
+        db.add(TaskEvent(task_id=task_id, message="Admissão aprovada pelo gestor e arquivada.", occurred_at=now_iso()))
+    elif payload.decision == "return":
+        communication = db.scalar(select(AdmissionWorkflowStep).where(AdmissionWorkflowStep.task_id == task_id, AdmissionWorkflowStep.step_key == "communication"))
+        if communication:
+            communication.status, communication.completed_at = "pending", None
+        task.status = "pending"
+        db.add(TaskEvent(task_id=task_id, message="Admissão devolvida pelo gestor para correção na etapa Comunicação.", occurred_at=now_iso()))
+    else:
+        raise HTTPException(status_code=422, detail="Decisão de análise inválida.")
+    db.commit()
+    db.refresh(task)
+    return task_out(task, db)
 
 
 def task_note_out(note: TaskNote) -> TaskNoteOut:

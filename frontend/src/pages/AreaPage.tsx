@@ -547,7 +547,7 @@ function SortableTaskTable({ tasks, selectedTaskId, onSelectTask, showAdmissionS
   });
   const sortBy = (column: typeof sort.column) => setSort((current) => current.column === column ? { column, direction: current.direction === "asc" ? "desc" : "asc" } : { column, direction: "asc" });
   const header = (column: typeof sort.column, label: string) => <button type="button" onClick={() => sortBy(column)}>{label}{sort.column === column ? (sort.direction === "asc" ? " ↑" : " ↓") : ""}</button>;
-  return <div className="task-queue-table"><label className="task-queue-search">Buscar na fila<input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Código, empresa, colaborador ou etapa" /></label><div className="company-table-wrap"><table className="company-table"><thead><tr><th>{header("code", "Código")}</th><th>{header("priority", "Prioridade")}</th><th>{header("company", "Empresa")}</th><th>{header("employee", "Colaborador")}</th><th>{header("station", "Esteira")}</th><th>{header("requested", "Solicitada em")}</th><th>{showAdmissionStage ? header("stage", "Etapa") : header("status", "Status")}</th></tr></thead><tbody>{sortedTasks.map((task) => <tr className={selectedTaskId === task.id ? "selected-task" : onSelectTask ? "selectable-task" : ""} onClick={() => onSelectTask?.(task)} key={task.id}><td><strong>{task.task_code ?? `T-${String(task.id).padStart(6, "0")}`}</strong></td><td><span className={`priority-badge ${task.priority}`}>{task.priority}</span></td><td>{task.client_name}</td><td>{task.employee_name ?? "—"}</td><td>{stationLabel(task.station_id)}</td><td>{task.requested_at ?? "—"}</td><td>{showAdmissionStage ? (stageLabel[task.workflow_stage ?? ""] ?? "Conferência") : (statusLabel[task.status] ?? task.status)}</td></tr>)}{sortedTasks.length === 0 && <tr><td colSpan={7} className="empty-state">Sem tarefas encontradas.</td></tr>}</tbody></table></div></div>;
+  return <div className="task-queue-table"><label className="task-queue-search">Buscar na fila<input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Código, empresa, colaborador ou etapa" /></label><div className="company-table-wrap"><table className="company-table"><thead><tr><th>{header("code", "Código")}</th><th>{header("priority", "Prioridade")}</th><th>{header("company", "Empresa")}</th><th>{header("employee", "Colaborador")}</th>{!showAdmissionStage && <th>{header("station", "Esteira")}</th>}<th>{header("requested", "Solicitada em")}</th><th>{showAdmissionStage ? header("stage", "Etapa") : header("status", "Status")}</th></tr></thead><tbody>{sortedTasks.map((task) => <tr className={selectedTaskId === task.id ? "selected-task" : onSelectTask ? "selectable-task" : ""} onClick={() => onSelectTask?.(task)} key={task.id}><td><strong>{task.task_code ?? `T-${String(task.id).padStart(6, "0")}`}</strong></td><td><span className={`priority-badge ${task.priority}`}>{task.priority}</span></td><td>{task.client_name}</td><td>{task.employee_name ?? "—"}</td>{!showAdmissionStage && <td>{stationLabel(task.station_id)}</td>}<td>{task.requested_at ?? "—"}</td><td>{showAdmissionStage ? (stageLabel[task.workflow_stage ?? ""] ?? "Conferência") : (statusLabel[task.status] ?? task.status)}</td></tr>)}{sortedTasks.length === 0 && <tr><td colSpan={showAdmissionStage ? 6 : 7} className="empty-state">Sem tarefas encontradas.</td></tr>}</tbody></table></div></div>;
 }
 
 function DepartmentArea({ departmentId, store }: { departmentId: "contabil" | "pessoal"; store: ReturnType<typeof useOperationState> }) {
@@ -601,7 +601,8 @@ function DepartmentArea({ departmentId, store }: { departmentId: "contabil" | "p
       return date;
     };
     const daysToDeadline = (task: typeof personnelTasks[number], stationId: string) => Math.ceil((deadlineFor(task, stationId).getTime() - now.getTime()) / 86400000);
-    const openPersonnelTasks = personnelTasks.filter((task) => task.status !== "done");
+    const openPersonnelTasks = personnelTasks.filter((task) => task.status !== "done" && task.status !== "manager_review");
+    const managerReviewTasks = personnelTasks.filter((task) => task.status === "manager_review");
     const globalChecklistPending = openPersonnelTasks.filter((task) => !task.checklist_ready).length;
     const globalAvailable = openPersonnelTasks.filter((task) => task.checklist_ready && task.status === "pending").length;
     const globalWarning = openPersonnelTasks.filter((task) => task.checklist_ready && daysToDeadline(task, task.station_id!) >= 0 && daysToDeadline(task, task.station_id!) <= personnelSettings.warningDays).length;
@@ -618,8 +619,8 @@ function DepartmentArea({ departmentId, store }: { departmentId: "contabil" | "p
         {criticalPeriod && <div className="closing-alert"><strong>Periodo critico de fechamento ativo</strong><span>As tarefas do Departamento Pessoal devem receber prioridade reforcada ate o dia {personnelSettings.criticalEndDay}.</span></div>}
         <details className="personnel-settings-panel"><summary>Configurar prazos e periodo critico</summary><div className="settings-grid"><label>Admissao (dias)<input type="number" min="1" value={personnelSettings.admissionSlaDays} onChange={(event) => setPersonnelSettings({ ...personnelSettings, admissionSlaDays: Number(event.target.value) })} /></label><label>Rescisao (dias)<input type="number" min="1" value={personnelSettings.terminationSlaDays} onChange={(event) => setPersonnelSettings({ ...personnelSettings, terminationSlaDays: Number(event.target.value) })} /></label><label>Ferias (dias)<input type="number" min="1" value={personnelSettings.vacationSlaDays} onChange={(event) => setPersonnelSettings({ ...personnelSettings, vacationSlaDays: Number(event.target.value) })} /></label><label>Fechar folha ate o dia<input type="number" min="1" max="31" value={personnelSettings.payrollDueDay} onChange={(event) => setPersonnelSettings({ ...personnelSettings, payrollDueDay: Number(event.target.value) })} /></label><label>Inicio periodo critico<input type="number" min="1" max="31" value={personnelSettings.criticalStartDay} onChange={(event) => setPersonnelSettings({ ...personnelSettings, criticalStartDay: Number(event.target.value) })} /></label><label>Fim periodo critico<input type="number" min="1" max="31" value={personnelSettings.criticalEndDay} onChange={(event) => setPersonnelSettings({ ...personnelSettings, criticalEndDay: Number(event.target.value) })} /></label><label>Alertar antes (dias)<input type="number" min="0" value={personnelSettings.warningDays} onChange={(event) => setPersonnelSettings({ ...personnelSettings, warningDays: Number(event.target.value) })} /></label><button type="button" onClick={savePersonnelSettings}><Save size={16} /> Salvar configuracoes</button>{settingsSaved && <span>{settingsSaved}</span>}</div></details>
         <section className="personnel-alert-lanes">
-          {department.stations.map((station) => {
-            const tasks = personnelTasks.filter((task) => task.station_id === station.id);
+          {department.stations.filter((station) => station.id !== "analise-gestor").map((station) => {
+            const tasks = openPersonnelTasks.filter((task) => task.station_id === station.id);
             const openTasks = tasks.filter((task) => task.status !== "done");
             const overdue = openTasks.filter((task) => task.checklist_ready && daysToDeadline(task, station.id) < 0).length;
             const warning = openTasks.filter((task) => task.checklist_ready && daysToDeadline(task, station.id) >= 0 && daysToDeadline(task, station.id) <= personnelSettings.warningDays).length;
@@ -630,8 +631,9 @@ function DepartmentArea({ departmentId, store }: { departmentId: "contabil" | "p
               <Link className={`personnel-alert-card ${overdue ? "danger" : warning ? "warning" : "normal"}`} to={`/area/pessoal/station/${station.id}`} key={station.id}><header><div><span className="machine-light" /><strong>{station.title}</strong></div><span>{tasks.length} solicitacoes</span></header><div className="alert-numbers"><div className="locked"><strong>{blocked}</strong><span>checklist pendente</span></div><div className="available"><strong>{available}</strong><span>liberadas</span></div><div className="warning"><strong>{warning}</strong><span>proximas do prazo</span></div><div className="danger"><strong>{overdue}</strong><span>atrasadas</span></div></div><footer><span>{station.id === "folha" ? `Prazo mensal: dia ${personnelSettings.payrollDueDay}` : nearest ? `Proximo prazo em ${Math.max(daysToDeadline(nearest, station.id), 0)} dia(s)` : "Sem prazo pendente"}</span><strong>Ver fila da esteira →</strong></footer></Link>
             );
           })}
+          <Link className={`personnel-alert-card ${managerReviewTasks.length ? "warning" : "normal"}`} to="/area/pessoal/station/analise-gestor"><header><div><span className="machine-light" /><strong>Análise do Gestor</strong></div><span>{managerReviewTasks.length} peça(s)</span></header><div className="alert-numbers"><div className="warning"><strong>{managerReviewTasks.length}</strong><span>aguardando análise</span></div></div><footer><span>Saída de qualidade após a entrega ao cliente</span><strong>Abrir ponto de análise →</strong></footer></Link>
         </section>
-        <section className="ops-panel personnel-task-queue"><div className="customer-list-header"><div><h3>Fila de demandas</h3><small>Clique em qualquer coluna para ordenar a fila operacional.</small></div></div><SortableTaskTable tasks={personnelTasks} /></section>
+        <section className="ops-panel personnel-task-queue"><div className="customer-list-header"><div><h3>Fila de demandas</h3><small>Clique em qualquer coluna para ordenar a fila operacional.</small></div></div><SortableTaskTable tasks={openPersonnelTasks} /></section>
       </AreaFrame>
     );
   }
@@ -732,18 +734,22 @@ export function PersonnelRequestPage() {
 }
 
 function AdmissionWorkstationPage() {
+  const navigate = useNavigate();
   const map = useFilteredOperationMap();
   const [searchParams, setSearchParams] = useSearchParams();
-  const tasks = map.tasks.filter((task) => task.area_id === "pessoal" && task.station_id === "admissoes");
-  const [selectedTaskId, setSelectedTaskId] = useState<number | null>(tasks[0]?.id ?? null);
+  const allAdmissionTasks = map.tasks.filter((task) => task.area_id === "pessoal" && task.station_id === "admissoes");
+  const tasks = allAdmissionTasks.filter((task) => task.status !== "manager_review" && task.status !== "done" && task.workflow_stage !== "completed");
+  const requestedTaskId = Number(searchParams.get("task")) || null;
+  const [selectedTaskId, setSelectedTaskId] = useState<number | null>(requestedTaskId ?? tasks[0]?.id ?? null);
   const [checklistOpen, setChecklistOpen] = useState(false);
   const [workflowSteps, setWorkflowSteps] = useState<{ stepKey: string; status: string; assignee?: string | null; releasedAt?: string | null; completedAt?: string | null }[]>([]);
   const [taskHistory, setTaskHistory] = useState<{ id: number; message: string; occurredAt: string }[]>([]);
   const [taskNotes, setTaskNotes] = useState<{ id: number; body: string; author: string; createdAt: string; updatedAt?: string | null }[]>([]);
   const [noteDraft, setNoteDraft] = useState("");
   const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
-  const [records, setRecords] = useState<Record<number, { documents: Record<string, File>; released: boolean; form: { employee: string; admissionDate: string; role: string; salary: string; startTime: string; endTime: string; breakStart: string; breakEnd: string; weeklyRest: string; weeklyRestOther: string; phone: string; race: string; probation: string; maritalStatus: string; reservistRequired: boolean; driver: boolean; childDependent: boolean; email: string; education: string; overtime: string; transport: string; healthPlan: string; specialNotes: string } }>>({});
-  const selectedTask = tasks.find((task) => task.id === selectedTaskId);
+  const [records, setRecords] = useState<Record<number, { documents: Record<string, { name: string; contentType: string }>; released: boolean; form: { employee: string; admissionDate: string; role: string; salary: string; startTime: string; endTime: string; breakStart: string; breakEnd: string; weeklyRest: string; weeklyRestOther: string; phone: string; race: string; probation: string; maritalStatus: string; reservistRequired: boolean; driver: boolean; childDependent: boolean; email: string; education: string; overtime: string; transport: string; healthPlan: string; specialNotes: string } }>>({});
+  const [checklistLoadedTaskId, setChecklistLoadedTaskId] = useState<number | null>(null);
+  const selectedTask = allAdmissionTasks.find((task) => task.id === selectedTaskId);
   useEffect(() => { if (selectedTaskId === null && tasks[0]) setSelectedTaskId(tasks[0].id); }, [selectedTaskId, tasks]);
   useEffect(() => { setChecklistOpen(selectedTask?.status === "waiting_release" || !selectedTask?.checklist_ready); }, [selectedTask?.id, selectedTask?.status, selectedTask?.checklist_ready]);
   useEffect(() => { if (!selectedTaskId) return; fetch(`${API_URL}/admission-workflows/${selectedTaskId}`, { headers: authHeaders() }).then((response) => response.ok ? response.json() : null).then((body) => body && setWorkflowSteps(body.steps)).catch(() => setWorkflowSteps([])); }, [selectedTaskId]);
@@ -754,6 +760,22 @@ function AdmissionWorkstationPage() {
   const form = record?.form ?? emptyForm(selectedTask?.employee_name ?? "");
   const documents = record?.documents ?? {};
   const released = record?.released ?? false;
+  useEffect(() => {
+    if (!selectedTaskId) return;
+    setChecklistLoadedTaskId(null);
+    fetch(`${API_URL}/admissions/${selectedTaskId}`, { headers: authHeaders() }).then((response) => response.ok ? response.json() : null).then((body) => {
+      if (!body) return;
+      const formData = { ...emptyForm(selectedTask?.employee_name ?? ""), ...body.form };
+      const savedDocuments = Object.fromEntries((body.documents ?? []).map((item: { documentKey: string; fileName: string; contentType: string }) => [item.documentKey, { name: item.fileName, contentType: item.contentType }]));
+      setRecords((current) => ({ ...current, [selectedTaskId]: { form: formData, documents: savedDocuments, released: body.released } }));
+      setChecklistLoadedTaskId(selectedTaskId);
+    }).catch(() => setChecklistLoadedTaskId(null));
+  }, [selectedTaskId]);
+  useEffect(() => {
+    if (!selectedTaskId || checklistLoadedTaskId !== selectedTaskId) return;
+    const timer = window.setTimeout(() => { void fetch(`${API_URL}/admissions/${selectedTaskId}`, { method: "PUT", headers: authHeaders({ "Content-Type": "application/json" }), body: JSON.stringify({ form, released }) }); }, 500);
+    return () => window.clearTimeout(timer);
+  }, [selectedTaskId, checklistLoadedTaskId, form, released]);
   function updateRecord(change: (current: NonNullable<typeof record>) => NonNullable<typeof record>) {
     if (selectedTaskId === null) return;
     setRecords((current) => {
@@ -762,7 +784,12 @@ function AdmissionWorkstationPage() {
     });
   }
   function updateForm(nextForm: typeof form) { updateRecord((current) => ({ ...current, form: nextForm })); }
-  function updateDocuments(nextDocuments: Record<string, File>) { updateRecord((current) => ({ ...current, documents: nextDocuments })); }
+  function updateDocuments(nextDocuments: Record<string, { name: string; contentType: string } | File>) {
+    const uploads = Object.entries(nextDocuments).filter((entry): entry is [string, File] => entry[1] instanceof File);
+    const persistedDocuments = Object.fromEntries(Object.entries(nextDocuments).map(([id, file]) => [id, file instanceof File ? { name: file.name, contentType: file.type || "application/octet-stream" } : file]));
+    updateRecord((current) => ({ ...current, documents: persistedDocuments }));
+    uploads.forEach(([id, file]) => { void uploadDocument(id, file); });
+  }
   const requiredDocuments = [
     ["cpf", "CPF", true], ["identity", "Carteira de identidade", true], ["voter", "Titulo de eleitor", true],
     ["reservist", "Certificado de reservista", form.reservistRequired], ["aso", "Atestado de saude ocupacional (ASO)", true],
@@ -782,16 +809,26 @@ function AdmissionWorkstationPage() {
   const totalComplementary = optionalDocuments.length + complementaryFields.length;
   const pendingComplementary = totalComplementary - completedComplementary;
 
-  function canPreviewDocument(file: File) {
-    return file.type === "application/pdf" || file.type.startsWith("image/") || file.type.startsWith("text/");
+  function canPreviewDocument(file: { contentType: string }) {
+    return file.contentType === "application/pdf" || file.contentType.startsWith("image/") || file.contentType.startsWith("text/");
   }
 
-  function openDocument(documentId: string) {
+  async function openDocument(documentId: string) {
     const file = documents[documentId];
     if (!file) return;
-    const url = URL.createObjectURL(file);
+    const previewWindow = canPreviewDocument(file) ? window.open("", "_blank") : null;
+    const response = await fetch(`${API_URL}/admissions/${selectedTaskId}/documents/${documentId}`, { headers: authHeaders() });
+    if (!response.ok) { previewWindow?.close(); return; }
+    const url = URL.createObjectURL(await response.blob());
     if (canPreviewDocument(file)) {
-      window.open(url, "_blank", "noopener,noreferrer");
+      if (previewWindow) previewWindow.location.href = url;
+      else {
+        const link = document.createElement("a");
+        link.href = url;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.click();
+      }
     } else {
       const link = document.createElement("a");
       link.href = url;
@@ -799,6 +836,16 @@ function AdmissionWorkstationPage() {
       link.click();
     }
     window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+  }
+
+  async function uploadDocument(documentId: string, selectedFile: File) {
+    if (!selectedTaskId) return;
+    const payload = new FormData();
+    payload.append("file", selectedFile);
+    const response = await fetch(`${API_URL}/admissions/${selectedTaskId}/documents/${documentId}`, { method: "POST", headers: authHeaders(), body: payload });
+    if (!response.ok) return;
+    const saved = await response.json();
+    updateDocuments({ ...documents, [documentId]: { name: saved.fileName, contentType: saved.contentType } });
   }
 
   function field(name: keyof typeof form, label: string, type = "text", required = true) {
@@ -809,7 +856,10 @@ function AdmissionWorkstationPage() {
   async function completeWorkflowStep(stepKey: string) {
     if (!selectedTaskId) return;
     const response = await fetch(`${API_URL}/admission-workflows/${selectedTaskId}/steps/${stepKey}`, { method: "PUT", headers: authHeaders({ "Content-Type": "application/json" }), body: JSON.stringify({ status: "done" }) });
-    if (response.ok) setWorkflowSteps((await response.json()).steps);
+    if (response.ok) {
+      setWorkflowSteps((await response.json()).steps);
+      if (stepKey === "communication") navigate("/area/pessoal/station/analise-gestor");
+    }
   }
   async function saveTaskNote() {
     if (!selectedTaskId || !noteDraft.trim()) return;
@@ -860,9 +910,35 @@ export function AdmissionManualsPage({ onBack }: { onBack?: () => void } = {}) {
   );
 }
 
+function ManagerReviewPage() {
+  const map = useFilteredOperationMap();
+  const [handledTaskIds, setHandledTaskIds] = useState<number[]>([]);
+  const [message, setMessage] = useState("");
+  const tasks = map.tasks.filter((task) => task.area_id === "pessoal" && task.station_id === "admissoes" && task.status === "manager_review" && !handledTaskIds.includes(task.id));
+
+  async function review(taskId: number, decision: "approve" | "return") {
+    setMessage("");
+    const response = await fetch(`${API_URL}/admissions/${taskId}/manager-review`, { method: "POST", headers: authHeaders({ "Content-Type": "application/json" }), body: JSON.stringify({ decision }) });
+    if (!response.ok) {
+      const body = await response.json().catch(() => null) as { detail?: string } | null;
+      setMessage(body?.detail ?? "Não foi possível registrar a análise.");
+      return;
+    }
+    setHandledTaskIds((current) => [...current, taskId]);
+    setMessage(decision === "approve" ? "Admissão aprovada e arquivada." : "Admissão devolvida para a etapa Comunicação.");
+  }
+
+  return (
+    <AreaFrame title="Análise do Gestor" subtitle="Ponto de saída para conferir as admissões entregues antes do arquivamento definitivo." icon={<PackageCheck />} smallHeader backTo="/area/pessoal" backLabel="Sair">
+      <section className="ops-panel manager-review-queue"><div className="customer-list-header"><div><h3>Peças aguardando análise</h3><small>{tasks.length} admissão(ões) concluída(s) pela operação e entregue(s) ao cliente.</small></div></div>{message && <p className="personnel-request-message">{message}</p>}<div className="company-table-wrap"><table className="company-table"><thead><tr><th>Código</th><th>Empresa</th><th>Colaborador</th><th>Solicitada em</th><th>Apresentação</th><th>Decisão do gestor</th></tr></thead><tbody>{tasks.map((task) => <tr key={task.id}><td><strong>{task.task_code ?? `T-${String(task.id).padStart(6, "0")}`}</strong></td><td>{task.client_name}</td><td>{task.employee_name ?? "—"}</td><td>{task.requested_at ?? "—"}</td><td><Link to={`/area/pessoal/station/admissoes?task=${task.id}`}>Abrir dossiê</Link></td><td><div className="manager-review-actions"><button type="button" onClick={() => void review(task.id, "return")}>Devolver</button><button type="button" onClick={() => void review(task.id, "approve")}><CheckCircle2 size={16} /> Aprovar e arquivar</button></div></td></tr>)}{tasks.length === 0 && <tr><td colSpan={6} className="empty-state">Nenhuma peça aguardando análise do gestor.</td></tr>}</tbody></table></div></section>
+    </AreaFrame>
+  );
+}
+
 export function WorkstationPage() {
   const { areaId, stationId } = useParams();
   if (areaId === "pessoal" && stationId === "admissoes") return <AdmissionWorkstationPage />;
+  if (areaId === "pessoal" && stationId === "analise-gestor") return <ManagerReviewPage />;
   return <StandardWorkstationPage areaId={areaId} stationId={stationId} />;
 }
 

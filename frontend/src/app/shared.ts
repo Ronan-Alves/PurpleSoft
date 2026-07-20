@@ -245,7 +245,8 @@ export const departmentCatalog = {
       { id: "admissoes", title: "Admissoes" },
       { id: "rescisoes", title: "Rescisoes" },
       { id: "ferias", title: "Ferias" },
-      { id: "folha", title: "Folha de Pagamento" }
+      { id: "folha", title: "Folha de Pagamento" },
+      { id: "analise-gestor", title: "Analise do Gestor" }
     ]
   },
   financeiro: {
