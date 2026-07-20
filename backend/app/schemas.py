@@ -25,8 +25,20 @@ class WorkAreaOut(BaseModel):
     priority: int
 
 
+class EmployeeOut(BaseModel):
+    id: str
+    name: str
+    area_id: str
+    active: bool
+
+
+class EmployeesOut(BaseModel):
+    employees: list[EmployeeOut]
+
+
 class TaskOut(BaseModel):
     id: int
+    task_code: str | None = None
     title: str
     client_name: str
     status: str
@@ -36,6 +48,10 @@ class TaskOut(BaseModel):
     station_id: str | None = None
     requested_at: str | None = None
     checklist_ready: bool = False
+    customer_id: str | None = None
+    employee_name: str | None = None
+    request_notes: str | None = None
+    workflow_stage: str | None = None
 
 
 class OperationMap(BaseModel):
@@ -56,6 +72,84 @@ class PersonnelSettingsIn(BaseModel):
 
 class PersonnelSettingsOut(PersonnelSettingsIn):
     pass
+
+
+class PersonnelRequestIn(BaseModel):
+    customerId: str
+    stationId: str
+    employeeName: str
+    requestedAt: str
+    priority: str = "normal"
+    checklistReady: bool = False
+    notes: str | None = None
+
+
+class AdmissionWorkflowStepOut(BaseModel):
+    stepKey: str
+    status: str
+    assignee: str | None = None
+    releasedAt: str | None = None
+    completedAt: str | None = None
+
+
+class AdmissionWorkflowOut(BaseModel):
+    steps: list[AdmissionWorkflowStepOut]
+
+
+class AdmissionWorkflowStepIn(BaseModel):
+    status: str
+    assignee: str | None = None
+
+
+class AdmissionChecklistIn(BaseModel):
+    form: dict[str, str | bool]
+    released: bool = False
+
+
+class AdmissionAttachmentOut(BaseModel):
+    documentKey: str
+    fileName: str
+    contentType: str
+
+
+class AdmissionChecklistOut(AdmissionChecklistIn):
+    documents: list[AdmissionAttachmentOut]
+    updatedAt: str | None = None
+
+
+class TaskNoteIn(BaseModel):
+    body: str = Field(min_length=1, max_length=4000)
+
+
+class TaskNoteOut(BaseModel):
+    id: int
+    body: str
+    author: str
+    createdAt: str
+    updatedAt: str | None = None
+
+
+class TaskNotesOut(BaseModel):
+    notes: list[TaskNoteOut]
+
+
+class TaskEventOut(BaseModel):
+    id: int
+    message: str
+    occurredAt: str
+
+
+class TaskEventsOut(BaseModel):
+    events: list[TaskEventOut]
+
+
+class FactoryLayoutIn(BaseModel):
+    layout: dict[str, object]
+    sockets: dict[str, object]
+
+
+class FactoryLayoutOut(FactoryLayoutIn):
+    canManage: bool
 
 
 class CustomerContactIn(BaseModel):

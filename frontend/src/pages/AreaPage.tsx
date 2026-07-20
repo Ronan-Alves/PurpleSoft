@@ -2,13 +2,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, BarChart3, Boxes, Building2, CheckCircle2, CircleHelp, ClipboardList, FileText, GitBranch, PackageCheck, Play, PlayCircle, Plus, Save, Timer, Upload, UsersRound, WalletCards } from "lucide-react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import Shell from "../components/Shell";
-import { API_URL, authHeaders, clientSessionKey, customerName, demandProgress, departmentCatalog, employees, formatDuration, officeName, taskTemplates, uniqueId, useOperationMap, useOperationState } from "../app/shared";
-import type { ClientAccess, ClientPending, Customer, CustomerBasicRegistrationResponse, CustomerContact, Demand, OperationState, OperationTask, Priority, ServiceInterest, TaskStatus } from "../app/shared";
+import { API_URL, authHeaders, clientSessionKey, customerName, demandProgress, departmentCatalog, employees, formatDuration, officeName, taskTemplates, uniqueId, useFilteredOperationMap, useOperationState } from "../app/shared";
+import type { ClientAccess, ClientPending, Customer, CustomerBasicRegistrationResponse, CustomerContact, Demand, OperationState, OperationTask, Priority, ServiceInterest, Task as ApiTask, TaskStatus } from "../app/shared";
 
 export default function AreaPage() {
   const { areaId } = useParams();
   const navigate = useNavigate();
-  const map = useOperationMap();
+  const map = useFilteredOperationMap();
   const store = useOperationState();
   const area = useMemo(() => map.areas.find((item) => item.id === areaId), [areaId, map.areas]);
 
@@ -42,12 +42,12 @@ export default function AreaPage() {
   );
 }
 
-function AreaFrame({ title, subtitle, icon, children, smallHeader = false }: { title: string; subtitle: string; icon: React.ReactNode; children: React.ReactNode; smallHeader?: boolean }) {
+function AreaFrame({ title, subtitle, icon, children, smallHeader = false, backTo, backLabel = "Voltar" }: { title: string; subtitle: string; icon: React.ReactNode; children: React.ReactNode; smallHeader?: boolean; backTo?: string; backLabel?: string }) {
   const navigate = useNavigate();
   return (
     <Shell>
       <main className="area-page">
-        <button className="back-button" onClick={() => navigate(-1)}><ArrowLeft size={18} /> Voltar</button>
+        <button className="back-button" onClick={() => backTo ? navigate(backTo) : navigate(-1)}><ArrowLeft size={18} /> {backLabel}</button>
         <section className={`area-hero compact ${smallHeader ? "small" : ""}`}>
           <div>
             <p className="eyebrow">Estacao operacional</p>
@@ -517,10 +517,43 @@ function TriageArea({ store }: { store: ReturnType<typeof useOperationState> }) 
   );
 }
 
+function SortableTaskTable({ tasks, selectedTaskId, onSelectTask, showAdmissionStage = false }: { tasks: ApiTask[]; selectedTaskId?: number | null; onSelectTask?: (task: ApiTask) => void; showAdmissionStage?: boolean }) {
+  const [sort, setSort] = useState<{ column: "code" | "priority" | "company" | "employee" | "requested" | "status" | "station" | "stage"; direction: "asc" | "desc" }>({ column: "code", direction: "asc" });
+  const [search, setSearch] = useState("");
+  const priorityRank: Record<string, number> = { critica: 0, alta: 1, normal: 2, baixa: 3 };
+  const stationLabel = (stationId?: string | null) => departmentCatalog.pessoal.stations.find((station) => station.id === stationId)?.title ?? "Sem esteira";
+  const statusLabel: Record<string, string> = { waiting_release: "Aguardando liberação", pending: "Liberada", running: "Em execução", blocked: "Aguardando", done: "Concluída", done_waiting: "Concluída" };
+  const stageLabel: Record<string, string> = { conference: "Conferência", registration: "Cadastro", esocial: "eSocial", contracts: "Contratos", communication: "Comunicação", completed: "Concluída" };
+  const filteredTasks = tasks.filter((task) => {
+    const term = search.trim().toLocaleLowerCase();
+    if (!term) return true;
+    return [task.task_code ?? `T-${String(task.id).padStart(6, "0")}`, task.client_name, task.employee_name, stationLabel(task.station_id), stageLabel[task.workflow_stage ?? ""] ?? statusLabel[task.status] ?? task.status, task.priority, task.requested_at].some((value) => value?.toLocaleLowerCase().includes(term));
+  });
+  const sortedTasks = [...filteredTasks].sort((first, second) => {
+    const value = (task: ApiTask) => {
+      if (sort.column === "code") return task.id;
+      if (sort.column === "priority") return priorityRank[task.priority] ?? 9;
+      if (sort.column === "company") return task.client_name;
+      if (sort.column === "employee") return task.employee_name ?? "";
+      if (sort.column === "requested") return task.requested_at ?? "";
+      if (sort.column === "station") return stationLabel(task.station_id);
+      if (sort.column === "stage") return stageLabel[task.workflow_stage ?? ""] ?? "Conferência";
+      return statusLabel[task.status] ?? task.status;
+    };
+    const a = value(first);
+    const b = value(second);
+    const comparison = typeof a === "number" && typeof b === "number" ? a - b : String(a).localeCompare(String(b), "pt-BR");
+    return sort.direction === "asc" ? comparison : -comparison;
+  });
+  const sortBy = (column: typeof sort.column) => setSort((current) => current.column === column ? { column, direction: current.direction === "asc" ? "desc" : "asc" } : { column, direction: "asc" });
+  const header = (column: typeof sort.column, label: string) => <button type="button" onClick={() => sortBy(column)}>{label}{sort.column === column ? (sort.direction === "asc" ? " ↑" : " ↓") : ""}</button>;
+  return <div className="task-queue-table"><label className="task-queue-search">Buscar na fila<input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Código, empresa, colaborador ou etapa" /></label><div className="company-table-wrap"><table className="company-table"><thead><tr><th>{header("code", "Código")}</th><th>{header("priority", "Prioridade")}</th><th>{header("company", "Empresa")}</th><th>{header("employee", "Colaborador")}</th><th>{header("station", "Esteira")}</th><th>{header("requested", "Solicitada em")}</th><th>{showAdmissionStage ? header("stage", "Etapa") : header("status", "Status")}</th></tr></thead><tbody>{sortedTasks.map((task) => <tr className={selectedTaskId === task.id ? "selected-task" : onSelectTask ? "selectable-task" : ""} onClick={() => onSelectTask?.(task)} key={task.id}><td><strong>{task.task_code ?? `T-${String(task.id).padStart(6, "0")}`}</strong></td><td><span className={`priority-badge ${task.priority}`}>{task.priority}</span></td><td>{task.client_name}</td><td>{task.employee_name ?? "—"}</td><td>{stationLabel(task.station_id)}</td><td>{task.requested_at ?? "—"}</td><td>{showAdmissionStage ? (stageLabel[task.workflow_stage ?? ""] ?? "Conferência") : (statusLabel[task.status] ?? task.status)}</td></tr>)}{sortedTasks.length === 0 && <tr><td colSpan={7} className="empty-state">Sem tarefas encontradas.</td></tr>}</tbody></table></div></div>;
+}
+
 function DepartmentArea({ departmentId, store }: { departmentId: "contabil" | "pessoal"; store: ReturnType<typeof useOperationState> }) {
   const { state } = store;
   const department = departmentCatalog[departmentId];
-  const map = useOperationMap();
+  const map = useFilteredOperationMap();
   const [accountingAssigneeFilter, setAccountingAssigneeFilter] = useState("todos");
   const [personnelSettings, setPersonnelSettings] = useState({ admissionSlaDays: 1, terminationSlaDays: 2, vacationSlaDays: 3, payrollDueDay: 25, criticalStartDay: 20, criticalEndDay: 25, warningDays: 1 });
   const [settingsSaved, setSettingsSaved] = useState("");
@@ -547,7 +580,7 @@ function DepartmentArea({ departmentId, store }: { departmentId: "contabil" | "p
       return { office, total: companies.length, done: tasks.filter((task) => task.status === "done").length };
     }).filter((item) => item.total > 0);
     return (
-      <AreaFrame title="Departamento Contabil" subtitle="Acompanhe as folhas por escritorio e organize a fila geral de prioridade do setor." icon={<Boxes />} smallHeader>
+      <AreaFrame title="Departamento Contabil" subtitle="Acompanhe as folhas por escritorio e organize a fila geral de prioridade do setor." icon={<Boxes />} smallHeader backTo="/" backLabel="Sair">
         <section className="accounting-overview">
           <section className="ops-panel"><div className="customer-list-header"><div><h3>Progresso por escritorio</h3><small>Folhas de todas as empresas com servico contabil</small></div></div><div className="office-progress-list">{officeProgress.map(({ office, total, done }) => { const missing = Math.max(total - done, 0); return <article key={office.id}><div><strong>{office.name}</strong><small>{done} de {total} folhas concluidas</small></div><div className="office-progress-bar"><span style={{ width: `${total ? (done / total) * 100 : 0}%` }} /></div><strong className={missing ? "missing" : "complete"}>{missing} faltando</strong></article>; })}</div></section>
           <section className="ops-panel accounting-priority"><div className="customer-list-header"><div><h3>Fila geral de prioridade</h3><small>{filteredTasks.length} folhas no filtro atual</small></div><label className="inline-filter">Responsavel<select value={accountingAssigneeFilter} onChange={(event) => setAccountingAssigneeFilter(event.target.value)}><option value="todos">Todos</option><option value="sem_responsavel">Sem responsavel</option>{assignees.map((assignee) => <option key={assignee} value={assignee}>{assignee}</option>)}</select></label></div><div className="company-table-wrap"><table className="company-table accounting-queue"><thead><tr><th>Prioridade</th><th>Empresa</th><th>Responsavel</th><th>Status</th></tr></thead><tbody>{filteredTasks.map((task) => <tr key={task.id}><td><span className={`priority-badge ${task.priority}`}>{task.priority}</span></td><td><strong>{task.client_name}</strong></td><td>{task.assignee ?? <span className="unassigned">Sem responsavel</span>}</td><td>{task.status}</td></tr>)}</tbody></table></div></section>
@@ -574,7 +607,8 @@ function DepartmentArea({ departmentId, store }: { departmentId: "contabil" | "p
     const globalWarning = openPersonnelTasks.filter((task) => task.checklist_ready && daysToDeadline(task, task.station_id!) >= 0 && daysToDeadline(task, task.station_id!) <= personnelSettings.warningDays).length;
     const globalOverdue = openPersonnelTasks.filter((task) => task.checklist_ready && daysToDeadline(task, task.station_id!) < 0).length;
     return (
-      <AreaFrame title="Departamento Pessoal" subtitle="Visao fabril das filas, prioridades e liberacoes de cada linha de producao." icon={<UsersRound />} smallHeader>
+      <AreaFrame title="Departamento Pessoal" subtitle="Visao fabril das filas, prioridades e liberacoes de cada linha de producao." icon={<UsersRound />} smallHeader backTo="/" backLabel="Sair">
+        <div className="personnel-overview-actions"><div><strong>Demandas pontuais</strong><span>Registre admissões, rescisões e férias para entrarem na esteira correta.</span></div><Link to="/area/pessoal/solicitacoes/nova"><Plus size={17} /> Nova solicitação</Link></div>
         <section className="personnel-summary">
           <article><ClipboardList /><span>Checklist pendente</span><strong>{globalChecklistPending}</strong></article>
           <article><CheckCircle2 /><span>Liberadas</span><strong>{globalAvailable}</strong></article>
@@ -597,6 +631,7 @@ function DepartmentArea({ departmentId, store }: { departmentId: "contabil" | "p
             );
           })}
         </section>
+        <section className="ops-panel personnel-task-queue"><div className="customer-list-header"><div><h3>Fila de demandas</h3><small>Clique em qualquer coluna para ordenar a fila operacional.</small></div></div><SortableTaskTable tasks={personnelTasks} /></section>
       </AreaFrame>
     );
   }
@@ -621,16 +656,113 @@ function DepartmentArea({ departmentId, store }: { departmentId: "contabil" | "p
   );
 }
 
+export function PersonnelRequestPage() {
+  const navigate = useNavigate();
+  const { state } = useOperationState();
+  const personnelCustomers = state.customers.filter((customer) => customer.serviceInterests?.includes("pessoal"));
+  const [companySearch, setCompanySearch] = useState("");
+  const [companyListOpen, setCompanyListOpen] = useState(false);
+  const [form, setForm] = useState({
+    customerId: "",
+    stationId: "admissoes",
+    employeeName: "",
+    requestedAt: new Date().toISOString().slice(0, 10),
+    priority: "normal",
+    checklistReady: false,
+    notes: "",
+  });
+  const [message, setMessage] = useState("");
+  const [saving, setSaving] = useState(false);
+  const matchingCustomers = personnelCustomers.filter((customer) => {
+    const term = companySearch.trim().toLocaleLowerCase();
+    if (!term) return true;
+    return [customer.tradeName, customer.legalName, officeName(state, customer.officeId)].some((value) => value?.toLocaleLowerCase().includes(term));
+  });
+
+  function chooseCustomer(customer: Customer) {
+    setForm({ ...form, customerId: customer.id });
+    setCompanySearch(customer.tradeName || customer.legalName);
+    setCompanyListOpen(false);
+  }
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    setMessage("");
+    if (!form.customerId) {
+      setMessage("Selecione a empresa solicitante.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const response = await fetch(`${API_URL}/personnel-requests`, {
+        method: "POST",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify(form),
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => null) as { detail?: string } | null;
+        throw new Error(body?.detail ?? "Não foi possível criar a solicitação.");
+      }
+      navigate("/area/pessoal");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Não foi possível criar a solicitação.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <AreaFrame title="Nova solicitação" subtitle="Crie uma demanda pontual e encaminhe-a diretamente para a esteira do Departamento Pessoal." icon={<ClipboardList />} smallHeader>
+      <form className="ops-panel personnel-request-form" onSubmit={submit}>
+        <div className="personnel-request-heading"><div><h3>Dados da solicitação</h3><p>O checklist inicial define se a tarefa já entra liberada para execução.</p></div><span>Não recorrente</span></div>
+        <div className="form-grid">
+          <label className="wide personnel-company-picker">Empresa solicitante<input required value={companySearch} onFocus={() => setCompanyListOpen(true)} onChange={(event) => { setCompanySearch(event.target.value); setForm({ ...form, customerId: "" }); setCompanyListOpen(true); }} placeholder="Digite o nome da empresa ou do escritório" autoComplete="off" />{companyListOpen && <div className="personnel-company-options">{matchingCustomers.map((customer) => <button type="button" key={customer.id} onMouseDown={(event) => event.preventDefault()} onClick={() => chooseCustomer(customer)}><strong>{customer.tradeName || customer.legalName}</strong><span>{customer.legalName} · {officeName(state, customer.officeId)}</span></button>)}{matchingCustomers.length === 0 && <p>Nenhuma empresa com Departamento Pessoal encontrada.</p>}</div>}</label>
+          <label>Tipo de solicitação<select value={form.stationId} onChange={(event) => setForm({ ...form, stationId: event.target.value })}><option value="admissoes">Admissão</option><option value="rescisoes">Rescisão</option><option value="ferias">Férias</option></select></label>
+          <label>Nome do colaborador<input required value={form.employeeName} onChange={(event) => setForm({ ...form, employeeName: event.target.value })} placeholder="Nome completo" /></label>
+          <label>Data da solicitação<input required type="date" value={form.requestedAt} onChange={(event) => setForm({ ...form, requestedAt: event.target.value })} /></label>
+          <label>Prioridade<select value={form.priority} onChange={(event) => setForm({ ...form, priority: event.target.value })}><option value="baixa">Baixa</option><option value="normal">Normal</option><option value="alta">Alta</option><option value="critica">Crítica</option></select></label>
+          <label className="wide">Observações<textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} placeholder="Informações relevantes para a equipe responsável" /></label>
+        </div>
+        <label className="personnel-release-choice"><input type="checkbox" checked={form.checklistReady} onChange={(event) => setForm({ ...form, checklistReady: event.target.checked })} /><span><strong>Checklist inicial concluído</strong><small>{form.checklistReady ? "A tarefa será criada como liberada para execução." : "A tarefa ficará aguardando a liberação do checklist."}</small></span></label>
+        {message && <p className="personnel-request-message">{message}</p>}
+        <footer><button type="button" onClick={() => navigate("/area/pessoal")}>Cancelar</button><button type="submit" disabled={saving || personnelCustomers.length === 0}>{saving ? "Criando..." : "Criar solicitação"}</button></footer>
+      </form>
+    </AreaFrame>
+  );
+}
+
 function AdmissionWorkstationPage() {
-  const map = useOperationMap();
+  const map = useFilteredOperationMap();
   const [searchParams, setSearchParams] = useSearchParams();
   const tasks = map.tasks.filter((task) => task.area_id === "pessoal" && task.station_id === "admissoes");
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(tasks[0]?.id ?? null);
-  const [documents, setDocuments] = useState<Record<string, File>>({});
-  const [released, setReleased] = useState(false);
-  const [form, setForm] = useState({ employee: "", admissionDate: "", role: "", salary: "", startTime: "", endTime: "", breakStart: "", breakEnd: "", weeklyRest: "", phone: "", race: "", probation: "", maritalStatus: "", reservistRequired: false, driver: false, childDependent: false, email: "", education: "", overtime: "", transport: "", healthPlan: "", specialNotes: "" });
+  const [checklistOpen, setChecklistOpen] = useState(false);
+  const [workflowSteps, setWorkflowSteps] = useState<{ stepKey: string; status: string; assignee?: string | null; releasedAt?: string | null; completedAt?: string | null }[]>([]);
+  const [taskHistory, setTaskHistory] = useState<{ id: number; message: string; occurredAt: string }[]>([]);
+  const [taskNotes, setTaskNotes] = useState<{ id: number; body: string; author: string; createdAt: string; updatedAt?: string | null }[]>([]);
+  const [noteDraft, setNoteDraft] = useState("");
+  const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
+  const [records, setRecords] = useState<Record<number, { documents: Record<string, File>; released: boolean; form: { employee: string; admissionDate: string; role: string; salary: string; startTime: string; endTime: string; breakStart: string; breakEnd: string; weeklyRest: string; weeklyRestOther: string; phone: string; race: string; probation: string; maritalStatus: string; reservistRequired: boolean; driver: boolean; childDependent: boolean; email: string; education: string; overtime: string; transport: string; healthPlan: string; specialNotes: string } }>>({});
   const selectedTask = tasks.find((task) => task.id === selectedTaskId);
   useEffect(() => { if (selectedTaskId === null && tasks[0]) setSelectedTaskId(tasks[0].id); }, [selectedTaskId, tasks]);
+  useEffect(() => { setChecklistOpen(selectedTask?.status === "waiting_release" || !selectedTask?.checklist_ready); }, [selectedTask?.id, selectedTask?.status, selectedTask?.checklist_ready]);
+  useEffect(() => { if (!selectedTaskId) return; fetch(`${API_URL}/admission-workflows/${selectedTaskId}`, { headers: authHeaders() }).then((response) => response.ok ? response.json() : null).then((body) => body && setWorkflowSteps(body.steps)).catch(() => setWorkflowSteps([])); }, [selectedTaskId]);
+  useEffect(() => { if (!selectedTaskId) return; setNoteDraft(""); setEditingNoteId(null); fetch(`${API_URL}/tasks/${selectedTaskId}/notes`, { headers: authHeaders() }).then((response) => response.ok ? response.json() : null).then((body) => body && setTaskNotes(body.notes)).catch(() => setTaskNotes([])); }, [selectedTaskId]);
+  useEffect(() => { if (!selectedTaskId) return; fetch(`${API_URL}/tasks/${selectedTaskId}/history`, { headers: authHeaders() }).then((response) => response.ok ? response.json() : null).then((body) => body && setTaskHistory(body.events)).catch(() => setTaskHistory([])); }, [selectedTaskId, workflowSteps, taskNotes]);
+  const emptyForm = (employee = "") => ({ employee, admissionDate: "", role: "", salary: "", startTime: "", endTime: "", breakStart: "", breakEnd: "", weeklyRest: "", weeklyRestOther: "", phone: "", race: "", probation: "", maritalStatus: "", reservistRequired: false, driver: false, childDependent: false, email: "", education: "", overtime: "", transport: "", healthPlan: "", specialNotes: "" });
+  const record = selectedTaskId === null ? undefined : records[selectedTaskId];
+  const form = record?.form ?? emptyForm(selectedTask?.employee_name ?? "");
+  const documents = record?.documents ?? {};
+  const released = record?.released ?? false;
+  function updateRecord(change: (current: NonNullable<typeof record>) => NonNullable<typeof record>) {
+    if (selectedTaskId === null) return;
+    setRecords((current) => {
+      const selected = current[selectedTaskId] ?? { documents: {}, released: false, form: emptyForm(selectedTask?.employee_name ?? "") };
+      return { ...current, [selectedTaskId]: change(selected) };
+    });
+  }
+  function updateForm(nextForm: typeof form) { updateRecord((current) => ({ ...current, form: nextForm })); }
+  function updateDocuments(nextDocuments: Record<string, File>) { updateRecord((current) => ({ ...current, documents: nextDocuments })); }
   const requiredDocuments = [
     ["cpf", "CPF", true], ["identity", "Carteira de identidade", true], ["voter", "Titulo de eleitor", true],
     ["reservist", "Certificado de reservista", form.reservistRequired], ["aso", "Atestado de saude ocupacional (ASO)", true],
@@ -639,12 +771,16 @@ function AdmissionWorkstationPage() {
   ] as const;
   const optionalDocuments = ["Certidao de casamento/divorcio e CPF do conjuge", "Caderneta de vacinacao dos filhos", "Comprovante de escolaridade dos dependentes", "Declaracao escolar do menor estudante"];
   const activeRequiredDocuments = requiredDocuments.filter((item) => item[2]);
-  const requiredFields = [form.employee, form.admissionDate, form.role, form.salary, form.startTime, form.endTime, form.breakStart, form.breakEnd, form.weeklyRest, form.phone, form.race, form.probation, form.maritalStatus];
+  const requiredFields = [form.employee, form.admissionDate, form.role, form.salary, form.startTime, form.endTime, form.breakStart, form.breakEnd, form.weeklyRest, form.weeklyRest !== "Outras situações" || form.weeklyRestOther, form.phone, form.race, form.probation, form.maritalStatus];
   const completedDocuments = activeRequiredDocuments.filter(([id]) => documents[id]).length;
   const completedFields = requiredFields.filter(Boolean).length;
   const totalRequired = activeRequiredDocuments.length + requiredFields.length;
   const completedRequired = completedDocuments + completedFields;
   const canRelease = completedRequired === totalRequired;
+  const complementaryFields = [form.email, form.education, form.overtime, form.transport, form.healthPlan, form.specialNotes];
+  const completedComplementary = optionalDocuments.filter((_, index) => documents[`optional-${index}`]).length + complementaryFields.filter(Boolean).length;
+  const totalComplementary = optionalDocuments.length + complementaryFields.length;
+  const pendingComplementary = totalComplementary - completedComplementary;
 
   function canPreviewDocument(file: File) {
     return file.type === "application/pdf" || file.type.startsWith("image/") || file.type.startsWith("text/");
@@ -665,25 +801,48 @@ function AdmissionWorkstationPage() {
     window.setTimeout(() => URL.revokeObjectURL(url), 60000);
   }
 
-  function field(name: keyof typeof form, label: string, type = "text") {
-    return <label>{label}<input type={type} value={String(form[name])} onChange={(event) => setForm({ ...form, [name]: event.target.value })} required /></label>;
+  function field(name: keyof typeof form, label: string, type = "text", required = true) {
+    if (name === "weeklyRest") return <><label className="required-field"><span className="field-label">Descanso semanal<b className="required-mark">*</b></span><select value={form.weeklyRest} onChange={(event) => updateForm({ ...form, weeklyRest: event.target.value, weeklyRestOther: event.target.value === "Outras situações" ? form.weeklyRestOther : "" })} required><option value="" disabled>Selecione</option><option value="Sábado">Sábado</option><option value="Domingo">Domingo</option><option value="Sábado/Domingo">Sábado/Domingo</option><option value="Outras situações">Outras situações</option></select></label>{form.weeklyRest === "Outras situações" && <label className="required-field"><span className="field-label">Dia da folga<b className="required-mark">*</b></span><input value={form.weeklyRestOther} onChange={(event) => updateForm({ ...form, weeklyRestOther: event.target.value })} required placeholder="Ex.: sexta-feira" /></label>}</>;
+    return <label className={`${required ? "required-field" : ""} ${type === "time" ? "time-field" : ""}`}><span className="field-label">{label}{required && <b className="required-mark">*</b>}</span><input type={type} value={String(form[name])} onChange={(event) => updateForm({ ...form, [name]: event.target.value })} required={required} /></label>;
   }
+
+  async function completeWorkflowStep(stepKey: string) {
+    if (!selectedTaskId) return;
+    const response = await fetch(`${API_URL}/admission-workflows/${selectedTaskId}/steps/${stepKey}`, { method: "PUT", headers: authHeaders({ "Content-Type": "application/json" }), body: JSON.stringify({ status: "done" }) });
+    if (response.ok) setWorkflowSteps((await response.json()).steps);
+  }
+  async function saveTaskNote() {
+    if (!selectedTaskId || !noteDraft.trim()) return;
+    const url = editingNoteId ? `${API_URL}/tasks/${selectedTaskId}/notes/${editingNoteId}` : `${API_URL}/tasks/${selectedTaskId}/notes`;
+    const response = await fetch(url, { method: editingNoteId ? "PUT" : "POST", headers: authHeaders({ "Content-Type": "application/json" }), body: JSON.stringify({ body: noteDraft }) });
+    if (!response.ok) return;
+    const note = await response.json();
+    setTaskNotes((current) => editingNoteId ? current.map((item) => item.id === note.id ? note : item) : [note, ...current]);
+    setNoteDraft(""); setEditingNoteId(null);
+  }
+  async function removeTaskNote(noteId: number) {
+    if (!selectedTaskId || !window.confirm("Excluir esta nota?")) return;
+    const response = await fetch(`${API_URL}/tasks/${selectedTaskId}/notes/${noteId}`, { method: "DELETE", headers: authHeaders() });
+    if (response.ok) setTaskNotes((current) => current.filter((note) => note.id !== noteId));
+  }
+  const workflowPanel = <section className="admission-workflow">{[{ key: "conference", label: "Conferência" }, { key: "registration", label: "Cadastro" }, { key: "esocial", label: "eSocial" }, { key: "contracts", label: "Contratos" }, { key: "communication", label: "Comunicação" }].map((step, index) => { const current = workflowSteps.find((item) => item.stepKey === step.key); return <article className={current?.status ?? "locked"} key={step.key}><span>{index + 1}</span><div><strong>{step.label}</strong><small>{current?.status === "done" ? "Concluída" : current?.status === "locked" ? "Aguardando etapa anterior" : current?.status === "waiting_release" ? "Aguardando checklist" : "Liberada"}</small></div>{current?.status === "pending" && <button type="button" onClick={() => void completeWorkflowStep(step.key)}>Concluir</button>}</article>; })}</section>;
+  const notesPanel = <aside className="ops-panel admission-notes"><div><h3>Histórico e notas</h3><small>Atualizações automáticas e observações da equipe.</small></div><div className="task-history">{taskHistory.map((event) => <article key={event.id}><span>{new Date(event.occurredAt).toLocaleString("pt-BR")}</span><strong>{event.message}</strong></article>)}{taskHistory.length === 0 && <small>Sem atualizações registradas.</small>}</div><div className="task-note-composer"><textarea value={noteDraft} onChange={(event) => setNoteDraft(event.target.value)} placeholder="Escreva uma nota..." /><footer><button type="button" onClick={() => { setNoteDraft(""); setEditingNoteId(null); }}>Limpar</button><button type="button" onClick={() => void saveTaskNote()}>{editingNoteId ? "Salvar edição" : "Enviar edição"}</button></footer></div><div className="task-notes-list">{taskNotes.map((note) => <article key={note.id}><p>{note.body}</p><small>{note.author} · {new Date(note.createdAt).toLocaleString("pt-BR")}{note.updatedAt ? " · editada" : ""}</small><span><button type="button" onClick={() => { setNoteDraft(note.body); setEditingNoteId(note.id); }}>Editar</button><button type="button" onClick={() => void removeTaskNote(note.id)}>Excluir</button></span></article>)}{taskNotes.length === 0 && <small>Sem notas registradas.</small>}</div></aside>;
 
   if (searchParams.get("view") === "manuals") {
     return <AdmissionManualsPage onBack={() => setSearchParams({})} />;
   }
 
   return (
-    <AreaFrame title="Esteira de Admissoes" subtitle="Documentos e dados obrigatorios conforme o checklist de admissao enviado pelo escritorio." icon={<UsersRound />} smallHeader>
+    <AreaFrame title="Esteira de Admissoes" subtitle="Documentos e dados obrigatorios conforme o checklist de admissao enviado pelo escritorio." icon={<UsersRound />} smallHeader backTo="/area/pessoal" backLabel="Sair">
       <section className="admission-layout">
-        <aside className="ops-panel admission-requests"><h3>Solicitacoes</h3>{tasks.map((task) => <button className={selectedTaskId === task.id ? "active" : ""} type="button" key={task.id} onClick={() => { setSelectedTaskId(task.id); setReleased(false); }}><strong>{task.client_name}</strong><span className={`checklist-status ${task.checklist_ready ? "ready" : "missing"}`}>{task.checklist_ready ? "Checklist informado" : "Aguardando checklist"}</span></button>)}</aside>
         <main className="admission-checklist">
-          <section className="ops-panel admission-progress"><div><h3>{selectedTask?.client_name ?? "Selecione uma solicitacao"}</h3><small>{completedRequired} de {totalRequired} itens obrigatorios preenchidos</small></div><div className="office-progress-bar"><span style={{ width: `${totalRequired ? completedRequired / totalRequired * 100 : 0}%` }} /></div><strong>{Math.round(totalRequired ? completedRequired / totalRequired * 100 : 0)}%</strong></section>
-          <section className="admission-manual-shortcut"><div><FileText size={22} /><span><strong>Manuais da tarefa</strong><small>Consulte documentos e orientacoes para realizar esta admissao.</small></span></div><Link to="?view=manuals">Abrir manuais →</Link></section>
-          <section className="ops-panel"><h3>Documentos obrigatorios</h3><div className="admission-document-grid">{requiredDocuments.map(([id, label, required]) => { const file = documents[id]; return <label className={`${!required ? "conditional-inactive" : ""} ${file ? "has-file" : ""}`} key={id}><div><strong>{label}</strong><span>{file ? file.name : required ? "Obrigatorio" : "Condicional"}</span>{file && <button type="button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); openDocument(id); }}>{canPreviewDocument(file) ? "Visualizar" : "Baixar arquivo"}</button>}</div><input type="file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.odt" disabled={!required} onChange={(event) => { const selectedFile = event.target.files?.[0]; if (selectedFile) setDocuments({ ...documents, [id]: selectedFile }); }} /><Upload size={18} /></label>; })}</div><div className="admission-conditions"><label><input type="checkbox" checked={form.reservistRequired} onChange={(event) => setForm({ ...form, reservistRequired: event.target.checked })} /> Homem entre 18 e 45 anos</label><label><input type="checkbox" checked={form.driver} onChange={(event) => setForm({ ...form, driver: event.target.checked })} /> Exerce funcao de motorista</label><label><input type="checkbox" checked={form.childDependent} onChange={(event) => setForm({ ...form, childDependent: event.target.checked })} /> Possui filhos dependentes</label></div><details className="company-extra-fields"><summary>Documentos opcionais</summary><div className="admission-document-grid optional">{optionalDocuments.map((label) => <label key={label}><div><strong>{label}</strong><span>Opcional</span></div><input type="file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.odt" /><Upload size={18} /></label>)}</div></details></section>
-          <section className="ops-panel admission-form"><h3>Informacoes obrigatorias da contratacao</h3><div className="form-grid">{field("admissionDate", "Data de admissao", "date")}{field("employee", "Nome do funcionario")}{field("role", "Cargo")}{field("salary", "Salario")}{field("startTime", "Inicio do horario", "time")}{field("endTime", "Fim do horario", "time")}{field("breakStart", "Inicio do intervalo", "time")}{field("breakEnd", "Fim do intervalo", "time")}{field("weeklyRest", "Descanso semanal / dia da folga")}{field("phone", "Telefone de contato")}{field("race", "Raca/cor")}{field("probation", "Contrato de experiencia")}{field("maritalStatus", "Estado civil")}</div><details className="company-extra-fields"><summary>Informacoes opcionais</summary><div className="form-grid">{field("email", "E-mail")}{field("education", "Grau de instrucao")}{field("overtime", "Tratamento das horas extras")}{field("transport", "Vale-transporte")}{field("healthPlan", "Plano de saude")}<label className="wide">Informacoes especiais<textarea value={form.specialNotes} onChange={(event) => setForm({ ...form, specialNotes: event.target.value })} /></label></div></details></section>
-          <section className={`admission-release ${canRelease ? "ready" : "blocked"}`}><div><strong>{released ? "Admissao liberada para execucao" : canRelease ? "Checklist completo" : "Liberacao bloqueada"}</strong><span>{canRelease ? "Todos os documentos e dados obrigatorios foram informados." : `Faltam ${totalRequired - completedRequired} item(ns) obrigatorio(s).`}</span></div><button type="button" disabled={!canRelease || released} onClick={() => setReleased(true)}><CheckCircle2 size={18} /> Liberar admissao</button></section>
+          <section className="ops-panel admission-task-queue"><div className="customer-list-header"><div><h3>Fila de admissões</h3><small>Clique em uma solicitação para abrir o checklist. Clique nas colunas para ordenar.</small></div></div><SortableTaskTable tasks={tasks} selectedTaskId={selectedTaskId} onSelectTask={(task) => setSelectedTaskId(task.id)} showAdmissionStage /></section>
+          {workflowPanel}
+          <section className="ops-panel admission-progress"><div><h3>{selectedTask?.client_name ?? "Selecione uma solicitação"}</h3><small>Andamento do checklist da admissão</small></div><div className="admission-progress-bars"><div><small>{completedRequired} de {totalRequired} itens obrigatórios</small><div className="office-progress-bar"><span style={{ width: `${totalRequired ? completedRequired / totalRequired * 100 : 0}%` }} /></div></div><div className="complementary-bar"><small>{completedComplementary} de {totalComplementary} informações complementares {pendingComplementary ? `· ${pendingComplementary} pendente(s)` : "· concluídas"}</small><div className="office-progress-bar"><span style={{ width: `${totalComplementary ? completedComplementary / totalComplementary * 100 : 0}%` }} /></div></div></div><div className="admission-progress-actions"><strong>{Math.round(totalRequired ? completedRequired / totalRequired * 100 : 0)}%</strong><button className="checklist-toggle" type="button" onClick={() => setChecklistOpen((open) => !open)}>{checklistOpen ? "Recolher checklist" : "Abrir checklist"}</button></div><div className={`admission-release ${canRelease ? "ready" : "blocked"}`}><div><strong>{released ? "Admissão liberada para execução" : canRelease ? "Checklist obrigatório completo" : "Liberação bloqueada"}</strong><span>{canRelease ? pendingComplementary ? `A execução está liberada; ainda há ${pendingComplementary} informação(ões) complementar(es) para completar.` : "Todos os dados obrigatórios e complementares foram informados." : `Faltam ${totalRequired - completedRequired} item(ns) obrigatório(s).`}</span></div><button type="button" disabled={!canRelease || released} onClick={() => { updateRecord((current) => ({ ...current, released: true })); void completeWorkflowStep("conference"); }}><CheckCircle2 size={18} /> Liberar admissão</button></div></section>
+          <Link className="admission-help-button" to="?view=manuals" title="Abrir manuais da tarefa" aria-label="Abrir manuais da tarefa"><CircleHelp size={18} /> Manuais</Link>
+          {checklistOpen && <><section className="ops-panel admission-documents-panel"><h3>Documentos <span className="required-legend">* Obrigatório</span></h3><div className="admission-document-grid">{requiredDocuments.map(([id, label, required]) => { const file = documents[id]; return <label className={`${!required ? "conditional-inactive" : ""} ${file ? "has-file" : ""}`} key={id}><div><strong>{label}{required && <span className="required-mark">*</span>}</strong>{file && <span>{file.name}</span>}{file && <button type="button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); openDocument(id); }}>{canPreviewDocument(file) ? "Visualizar" : "Baixar arquivo"}</button>}</div><input type="file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.odt" disabled={!required} onChange={(event) => { const selectedFile = event.target.files?.[0]; if (selectedFile) updateDocuments({ ...documents, [id]: selectedFile }); }} /><Upload size={18} /></label>; })}</div><div className="admission-conditions"><label><input type="checkbox" checked={form.reservistRequired} onChange={(event) => updateForm({ ...form, reservistRequired: event.target.checked })} /> Homem entre 18 e 45 anos</label><label><input type="checkbox" checked={form.driver} onChange={(event) => updateForm({ ...form, driver: event.target.checked })} /> Exerce função de motorista</label><label><input type="checkbox" checked={form.childDependent} onChange={(event) => updateForm({ ...form, childDependent: event.target.checked })} /> Possui filhos dependentes</label></div><h4 className="admission-subheading">Documentos complementares <small>Importantes, mas não bloqueiam a liberação</small></h4><div className="admission-document-grid optional">{optionalDocuments.map((label, index) => { const id = `optional-${index}`; const file = documents[id]; return <label key={label}><div><strong>{label}</strong>{file && <span>{file.name}</span>}</div><input type="file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.odt" onChange={(event) => { const selectedFile = event.target.files?.[0]; if (selectedFile) updateDocuments({ ...documents, [id]: selectedFile }); }} /><Upload size={18} /></label>; })}</div></section><section className="ops-panel admission-form"><h3>Informações da contratação <span className="required-legend">* Obrigatório</span></h3><div className="form-grid">{field("admissionDate", "Data de admissão", "date")}{field("employee", "Nome do funcionário")}{field("role", "Cargo")}{field("salary", "Salário")}<section className="schedule-container"><header>Horários</header>{field("startTime", "Início", "time")}{field("endTime", "Fim", "time")}{field("breakStart", "Intervalo início", "time")}{field("breakEnd", "Intervalo fim", "time")}</section>{field("weeklyRest", "Descanso semanal / dia da folga")}{field("phone", "Telefone de contato")}{field("race", "Raça/cor")}<label className="required-field"><span className="field-label">Contrato de experiência<b className="required-mark">*</b></span><select value={form.probation} onChange={(event) => updateForm({ ...form, probation: event.target.value })} required><option value="" disabled>Selecione</option><option value="30 dias">30 dias</option><option value="45 dias">45 dias</option></select></label><label className="required-field"><span className="field-label">Estado civil<b className="required-mark">*</b></span><select value={form.maritalStatus} onChange={(event) => updateForm({ ...form, maritalStatus: event.target.value })} required><option value="" disabled>Selecione</option><option value="Casado">Casado</option><option value="Solteiro">Solteiro</option><option value="Emancipado">Emancipado</option></select></label></div><h4 className="admission-subheading">Informações complementares <small>Importantes, mas não bloqueiam a liberação</small></h4><div className="form-grid">{field("email", "E-mail", "text", false)}{field("education", "Grau de instrução", "text", false)}{field("overtime", "Tratamento das horas extras", "text", false)}{field("transport", "Vale-transporte", "text", false)}{field("healthPlan", "Plano de saúde", "text", false)}<label className="wide">Informações especiais<textarea value={form.specialNotes} onChange={(event) => updateForm({ ...form, specialNotes: event.target.value })} /></label></div></section></>}
         </main>
+        {notesPanel}
       </section>
     </AreaFrame>
   );

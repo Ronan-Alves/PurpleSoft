@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 
-from .models import Customer, CustomerServiceInterest, Office, Task, WorkArea
+from .models import Customer, CustomerServiceInterest, Employee, Office, Task, WorkArea
 
 
 AREAS = [
@@ -61,6 +61,13 @@ ACCOUNTING_FACTORY_TASKS = [
     ("Folha contabil mensal", "Novo Caminho", "done", "normal", "Camila Rocha"),
 ]
 
+EMPLOYEES = [
+    ("employee-ana-souza", "Ana Souza", "pessoal"),
+    ("employee-bruno-lima", "Bruno Lima", "pessoal"),
+    ("employee-camila-rocha", "Camila Rocha", "pessoal"),
+    ("employee-diego-martins", "Diego Martins", "contabil"),
+]
+
 DEMO_OFFICES = [
     ("office-demo-1", "Escritorio Alfa Contabil"),
     ("office-demo-2", "Martins & Rocha Consultoria"),
@@ -113,6 +120,9 @@ def seed_database(db: Session) -> None:
             customer.service_interests = [CustomerServiceInterest(service_type=service) for service in services]
             db.add(customer)
 
+    if not db.query(Employee).first():
+        db.add_all(Employee(id=id_, name=name, area_id=area_id) for id_, name, area_id in EMPLOYEES)
+
     for title, client, status, station_id, requested_at, checklist_ready, priority, assignee in PERSONNEL_FACTORY_TASKS:
         task = db.query(Task).filter(Task.area_id == "pessoal", Task.client_name == client, Task.station_id == station_id).first()
         if not task:
@@ -132,4 +142,7 @@ def seed_database(db: Session) -> None:
         if client not in existing_accounting_clients
     )
 
+    db.flush()
+    for task in db.query(Task).filter(Task.task_code.is_(None)).all():
+        task.task_code = f"T-{task.id:06d}"
     db.commit()

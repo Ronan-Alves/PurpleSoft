@@ -5,10 +5,10 @@ from secrets import token_urlsafe
 from unicodedata import normalize
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from jose import jwt
 from jose.exceptions import JWTError
 from passlib.context import CryptContext
@@ -18,19 +18,32 @@ from sqlalchemy.orm import Session
 from .database import SessionLocal, get_db
 from .models import (
     AccountingClientCompany,
+    AdmissionAttachment,
+    AdmissionChecklist,
+    AdmissionWorkflowStep,
     AuditLog,
     ClientAccess,
     ClientPending,
     Customer,
     CustomerContact,
     CustomerServiceInterest,
+    Employee,
+    FactoryLayout,
     Office,
     PersonnelSettings,
     Task,
+    TaskNote,
+    TaskEvent,
     WorkArea,
 )
 from .schemas import (
     AccountingClientCompaniesOut,
+    AdmissionAttachmentOut,
+    AdmissionChecklistIn,
+    AdmissionChecklistOut,
+    AdmissionWorkflowOut,
+    AdmissionWorkflowStepIn,
+    AdmissionWorkflowStepOut,
     AccountingClientCompanyBulkUpdateIn,
     AccountingClientCompanyIn,
     AccountingClientCompanyOut,
@@ -44,6 +57,10 @@ from .schemas import (
     CustomerBasicRegistrationIn,
     CustomerBasicRegistrationOut,
     CustomersOut,
+    EmployeeOut,
+    EmployeesOut,
+    FactoryLayoutIn,
+    FactoryLayoutOut,
     CustomerOut,
     LoginRequest,
     LoginResponse,
@@ -51,9 +68,15 @@ from .schemas import (
     OfficeIn,
     OfficeOut,
     OfficesOut,
+    PersonnelRequestIn,
     PersonnelSettingsIn,
     PersonnelSettingsOut,
     TaskOut,
+    TaskNoteIn,
+    TaskNoteOut,
+    TaskNotesOut,
+    TaskEventOut,
+    TaskEventsOut,
     WorkAreaOut,
 )
 from .seed import seed_database
@@ -135,6 +158,10 @@ def require_client(credentials: HTTPAuthorizationCredentials | None = Depends(be
     if not payload.get("customer_id"):
         raise HTTPException(status_code=401, detail="Token de cliente invalido.")
     return payload
+
+
+def is_manager(operator: dict[str, str]) -> bool:
+    return operator.get("sub") == settings.manager_email
 
 
 def actor_from_token(payload: dict[str, str]) -> tuple[str, str]:
@@ -355,6 +382,27 @@ def list_offices(
 ) -> OfficesOut:
     offices = db.scalars(select(Office).order_by(Office.name)).all()
     return OfficesOut(offices=[OfficeOut(id=office.id, name=office.name) for office in offices])
+
+
+@app.get("/employees", response_model=EmployeesOut)
+def list_employees(_: dict[str, str] = Depends(require_operator), db: Session = Depends(get_db)) -> EmployeesOut:
+    employees = db.scalars(select(Employee).where(Employee.active.is_(True)).order_by(Employee.name)).all()
+    return EmployeesOut(employees=[EmployeeOut.model_validate(employee, from_attributes=True) for employee in employees])
+
+
+@app.get("/factory-layout", response_model=FactoryLayoutOut)
+def get_factory_layout(operator: dict[str, str] = Depends(require_operator), db: Session = Depends(get_db)) -> FactoryLayoutOut:
+    row = db.get(FactoryLayout, "default")
+    return FactoryLayoutOut(layout=json.loads(row.layout) if row else {}, sockets=json.loads(row.sockets) if row else {}, canManage=is_manager(operator))
+
+
+@app.put("/factory-layout", response_model=FactoryLayoutOut)
+def save_factory_layout(payload: FactoryLayoutIn, operator: dict[str, str] = Depends(require_operator), db: Session = Depends(get_db)) -> FactoryLayoutOut:
+    if not is_manager(operator): raise HTTPException(status_code=403, detail="Somente o gestor pode alterar o layout.")
+    row = db.get(FactoryLayout, "default") or FactoryLayout(id="default", layout="{}", sockets="{}", updated_at=now_iso(), updated_by=operator["sub"])
+    row.layout, row.sockets, row.updated_at, row.updated_by = json.dumps(payload.layout), json.dumps(payload.sockets), now_iso(), operator["sub"]
+    db.add(row); db.commit()
+    return FactoryLayoutOut(layout=payload.layout, sockets=payload.sockets, canManage=True)
 
 
 @app.post("/offices", response_model=OfficeOut, status_code=201)
@@ -757,6 +805,235 @@ def update_personnel_settings(payload: PersonnelSettingsIn, _: dict[str, str] = 
     return personnel_settings_to_out(settings_row)
 
 
+@app.post("/personnel-requests", response_model=TaskOut, status_code=201)
+def create_personnel_request(
+    payload: PersonnelRequestIn,
+    operator: dict[str, str] = Depends(require_operator),
+    db: Session = Depends(get_db),
+) -> TaskOut:
+    station_titles = {
+        "admissoes": "Admissao de colaborador",
+        "rescisoes": "Rescisao contratual",
+        "ferias": "Calculo de ferias",
+    }
+    if payload.stationId not in station_titles:
+        raise HTTPException(status_code=422, detail="Tipo de solicitacao invalido.")
+    if payload.priority not in {"baixa", "normal", "alta", "critica"}:
+        raise HTTPException(status_code=422, detail="Prioridade invalida.")
+    if not payload.employeeName.strip():
+        raise HTTPException(status_code=422, detail="Informe o nome do colaborador.")
+    try:
+        datetime.strptime(payload.requestedAt, "%Y-%m-%d")
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Data da solicitacao invalida.") from exc
+
+    customer = db.get(Customer, payload.customerId)
+    if not customer:
+        raise HTTPException(status_code=404, detail="Empresa nao encontrada.")
+    has_personnel_service = db.scalar(
+        select(CustomerServiceInterest.id).where(
+            CustomerServiceInterest.customer_id == customer.id,
+            CustomerServiceInterest.service_type == "pessoal",
+        )
+    )
+    if not has_personnel_service:
+        raise HTTPException(status_code=422, detail="A empresa selecionada nao possui o servico de Departamento Pessoal.")
+
+    task = Task(
+        title=station_titles[payload.stationId],
+        client_name=customer.trade_name or customer.legal_name,
+        status="pending" if payload.checklistReady else "waiting_release",
+        area_id="pessoal",
+        priority=payload.priority,
+        station_id=payload.stationId,
+        requested_at=payload.requestedAt,
+        checklist_ready=payload.checklistReady,
+        customer_id=customer.id,
+        employee_name=payload.employeeName.strip(),
+        request_notes=payload.notes.strip() if payload.notes else None,
+    )
+    db.add(task)
+    db.flush()
+    task.task_code = f"T-{task.id:06d}"
+    db.flush()
+    add_audit_log(
+        db,
+        operator,
+        "personnel_request_created",
+        "task",
+        str(task.id),
+        customer.id,
+        {"stationId": task.station_id, "employeeName": task.employee_name, "checklistReady": task.checklist_ready},
+    )
+    db.commit()
+    db.refresh(task)
+    return TaskOut.model_validate(task, from_attributes=True)
+
+
+ADMISSION_STEPS = ["conference", "registration", "esocial", "contracts", "communication"]
+ADMISSION_STEP_LABELS = {"conference": "Conferência", "registration": "Cadastro", "esocial": "eSocial", "contracts": "Contratos", "communication": "Comunicação"}
+
+
+def admission_workflow_out(task: Task, db: Session) -> AdmissionWorkflowOut:
+    rows = {row.step_key: row for row in db.scalars(select(AdmissionWorkflowStep).where(AdmissionWorkflowStep.task_id == task.id)).all()}
+    if not rows:
+        for index, step_key in enumerate(ADMISSION_STEPS):
+            status = "waiting_release" if index == 0 and task.status == "waiting_release" else "pending" if index == 0 else "locked"
+            db.add(AdmissionWorkflowStep(task_id=task.id, step_key=step_key, status=status, released_at=now_iso() if status == "pending" else None))
+        db.commit()
+        rows = {row.step_key: row for row in db.scalars(select(AdmissionWorkflowStep).where(AdmissionWorkflowStep.task_id == task.id)).all()}
+    return AdmissionWorkflowOut(steps=[AdmissionWorkflowStepOut(stepKey=key, status=rows[key].status, assignee=rows[key].assignee, releasedAt=rows[key].released_at, completedAt=rows[key].completed_at) for key in ADMISSION_STEPS])
+
+
+def task_out(task: Task, db: Session) -> TaskOut:
+    result = TaskOut.model_validate(task, from_attributes=True)
+    if task.area_id == "pessoal" and task.station_id == "admissoes":
+        step = db.scalar(select(AdmissionWorkflowStep.step_key).where(AdmissionWorkflowStep.task_id == task.id, AdmissionWorkflowStep.status != "done").order_by(AdmissionWorkflowStep.id))
+        result.workflow_stage = step or "completed"
+    return result
+
+
+def admission_task_or_404(task_id: int, db: Session) -> Task:
+    task = db.get(Task, task_id)
+    if not task or task.area_id != "pessoal" or task.station_id != "admissoes":
+        raise HTTPException(status_code=404, detail="Admissão não encontrada.")
+    return task
+
+
+def admission_checklist_out(task_id: int, db: Session) -> AdmissionChecklistOut:
+    checklist = db.get(AdmissionChecklist, task_id)
+    attachments = db.scalars(select(AdmissionAttachment).where(AdmissionAttachment.task_id == task_id).order_by(AdmissionAttachment.document_key)).all()
+    form_data = json.loads(checklist.form_data) if checklist else {}
+    return AdmissionChecklistOut(
+        form=form_data,
+        released=checklist.released if checklist else False,
+        updatedAt=checklist.updated_at if checklist else None,
+        documents=[AdmissionAttachmentOut(documentKey=item.document_key, fileName=item.file_name, contentType=item.content_type) for item in attachments],
+    )
+
+
+@app.get("/admissions/{task_id}", response_model=AdmissionChecklistOut)
+def get_admission_checklist(task_id: int, _: dict[str, str] = Depends(require_operator), db: Session = Depends(get_db)) -> AdmissionChecklistOut:
+    admission_task_or_404(task_id, db)
+    return admission_checklist_out(task_id, db)
+
+
+@app.put("/admissions/{task_id}", response_model=AdmissionChecklistOut)
+def save_admission_checklist(task_id: int, payload: AdmissionChecklistIn, _: dict[str, str] = Depends(require_operator), db: Session = Depends(get_db)) -> AdmissionChecklistOut:
+    task = admission_task_or_404(task_id, db)
+    checklist = db.get(AdmissionChecklist, task_id)
+    if not checklist:
+        checklist = AdmissionChecklist(task_id=task_id, form_data="{}", released=False, updated_at=now_iso())
+        db.add(checklist)
+    checklist.form_data = json.dumps(payload.form, ensure_ascii=False)
+    checklist.released, checklist.updated_at = payload.released, now_iso()
+    if payload.released and task.status == "waiting_release":
+        task.status, task.checklist_ready = "pending", True
+        db.add(TaskEvent(task_id=task_id, message="Checklist de admissão liberado para execução.", occurred_at=now_iso()))
+    db.commit()
+    return admission_checklist_out(task_id, db)
+
+
+@app.post("/admissions/{task_id}/documents/{document_key}", response_model=AdmissionAttachmentOut)
+async def upload_admission_document(task_id: int, document_key: str, file: UploadFile = File(...), _: dict[str, str] = Depends(require_operator), db: Session = Depends(get_db)) -> AdmissionAttachmentOut:
+    admission_task_or_404(task_id, db)
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=422, detail="Selecione um arquivo para enviar.")
+    if len(content) > 25 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="O arquivo deve ter no máximo 25 MB.")
+    attachment = db.scalar(select(AdmissionAttachment).where(AdmissionAttachment.task_id == task_id, AdmissionAttachment.document_key == document_key))
+    if not attachment:
+        attachment = AdmissionAttachment(task_id=task_id, document_key=document_key, file_name=file.filename or "arquivo", content_type=file.content_type or "application/octet-stream", content=content, updated_at=now_iso())
+        db.add(attachment)
+    else:
+        attachment.file_name, attachment.content_type, attachment.content, attachment.updated_at = file.filename or "arquivo", file.content_type or "application/octet-stream", content, now_iso()
+    db.commit()
+    return AdmissionAttachmentOut(documentKey=attachment.document_key, fileName=attachment.file_name, contentType=attachment.content_type)
+
+
+@app.get("/admissions/{task_id}/documents/{document_key}")
+def download_admission_document(task_id: int, document_key: str, download: bool = False, _: dict[str, str] = Depends(require_operator), db: Session = Depends(get_db)) -> Response:
+    admission_task_or_404(task_id, db)
+    attachment = db.scalar(select(AdmissionAttachment).where(AdmissionAttachment.task_id == task_id, AdmissionAttachment.document_key == document_key))
+    if not attachment:
+        raise HTTPException(status_code=404, detail="Arquivo não encontrado.")
+    disposition = "attachment" if download else "inline"
+    return Response(content=attachment.content, media_type=attachment.content_type, headers={"Content-Disposition": f'{disposition}; filename="{attachment.file_name}"'})
+
+
+@app.get("/admission-workflows/{task_id}", response_model=AdmissionWorkflowOut)
+def get_admission_workflow(task_id: int, _: dict[str, str] = Depends(require_operator), db: Session = Depends(get_db)) -> AdmissionWorkflowOut:
+    task = db.get(Task, task_id)
+    if not task or task.area_id != "pessoal" or task.station_id != "admissoes":
+        raise HTTPException(status_code=404, detail="Admissão não encontrada.")
+    return admission_workflow_out(task, db)
+
+
+@app.put("/admission-workflows/{task_id}/steps/{step_key}", response_model=AdmissionWorkflowOut)
+def update_admission_workflow_step(task_id: int, step_key: str, payload: AdmissionWorkflowStepIn, _: dict[str, str] = Depends(require_operator), db: Session = Depends(get_db)) -> AdmissionWorkflowOut:
+    task = db.get(Task, task_id)
+    if not task or step_key not in ADMISSION_STEPS:
+        raise HTTPException(status_code=404, detail="Etapa não encontrada.")
+    admission_workflow_out(task, db)
+    row = db.scalar(select(AdmissionWorkflowStep).where(AdmissionWorkflowStep.task_id == task_id, AdmissionWorkflowStep.step_key == step_key))
+    if not row or payload.status not in {"pending", "in_progress", "waiting", "done"}:
+        raise HTTPException(status_code=422, detail="Atualização inválida.")
+    row.status, row.assignee = payload.status, payload.assignee
+    if not row.released_at and payload.status in {"pending", "in_progress", "done"}: row.released_at = now_iso()
+    row.completed_at = now_iso() if payload.status == "done" else None
+    if payload.status == "done":
+        db.add(TaskEvent(task_id=task_id, message=f"Etapa {ADMISSION_STEP_LABELS[step_key]} concluída.", occurred_at=now_iso()))
+        index = ADMISSION_STEPS.index(step_key)
+        if index + 1 < len(ADMISSION_STEPS):
+            next_row = db.scalar(select(AdmissionWorkflowStep).where(AdmissionWorkflowStep.task_id == task_id, AdmissionWorkflowStep.step_key == ADMISSION_STEPS[index + 1]))
+            if next_row and next_row.status == "locked":
+                next_row.status, next_row.released_at = "pending", now_iso()
+                db.add(TaskEvent(task_id=task_id, message=f"Etapa {ADMISSION_STEP_LABELS[next_row.step_key]} liberada.", occurred_at=now_iso()))
+    db.commit()
+    return admission_workflow_out(task, db)
+
+
+def task_note_out(note: TaskNote) -> TaskNoteOut:
+    return TaskNoteOut(id=note.id, body=note.body, author=note.author, createdAt=note.created_at, updatedAt=note.updated_at)
+
+
+@app.get("/tasks/{task_id}/history", response_model=TaskEventsOut)
+def task_history(task_id: int, _: dict[str, str] = Depends(require_operator), db: Session = Depends(get_db)) -> TaskEventsOut:
+    events = db.scalars(select(TaskEvent).where(TaskEvent.task_id == task_id).order_by(TaskEvent.occurred_at.desc())).all()
+    return TaskEventsOut(events=[TaskEventOut(id=event.id, message=event.message, occurredAt=event.occurred_at) for event in events])
+
+
+@app.get("/tasks/{task_id}/notes", response_model=TaskNotesOut)
+def list_task_notes(task_id: int, _: dict[str, str] = Depends(require_operator), db: Session = Depends(get_db)) -> TaskNotesOut:
+    if not db.get(Task, task_id): raise HTTPException(status_code=404, detail="Tarefa não encontrada.")
+    notes = db.scalars(select(TaskNote).where(TaskNote.task_id == task_id).order_by(TaskNote.created_at.desc())).all()
+    return TaskNotesOut(notes=[task_note_out(note) for note in notes])
+
+
+@app.post("/tasks/{task_id}/notes", response_model=TaskNoteOut, status_code=201)
+def create_task_note(task_id: int, payload: TaskNoteIn, operator: dict[str, str] = Depends(require_operator), db: Session = Depends(get_db)) -> TaskNoteOut:
+    if not db.get(Task, task_id): raise HTTPException(status_code=404, detail="Tarefa não encontrada.")
+    note = TaskNote(task_id=task_id, body=payload.body.strip(), author=operator["sub"], created_at=now_iso())
+    db.add(note); db.add(TaskEvent(task_id=task_id, message="Nova nota registrada.", occurred_at=now_iso())); db.commit(); db.refresh(note)
+    return task_note_out(note)
+
+
+@app.put("/tasks/{task_id}/notes/{note_id}", response_model=TaskNoteOut)
+def update_task_note(task_id: int, note_id: int, payload: TaskNoteIn, _: dict[str, str] = Depends(require_operator), db: Session = Depends(get_db)) -> TaskNoteOut:
+    note = db.scalar(select(TaskNote).where(TaskNote.id == note_id, TaskNote.task_id == task_id))
+    if not note: raise HTTPException(status_code=404, detail="Nota não encontrada.")
+    note.body, note.updated_at = payload.body.strip(), now_iso(); db.add(TaskEvent(task_id=task_id, message="Nota editada.", occurred_at=now_iso())); db.commit(); db.refresh(note)
+    return task_note_out(note)
+
+
+@app.delete("/tasks/{task_id}/notes/{note_id}", status_code=204)
+def delete_task_note(task_id: int, note_id: int, _: dict[str, str] = Depends(require_operator), db: Session = Depends(get_db)) -> None:
+    note = db.scalar(select(TaskNote).where(TaskNote.id == note_id, TaskNote.task_id == task_id))
+    if not note: raise HTTPException(status_code=404, detail="Nota não encontrada.")
+    db.delete(note); db.add(TaskEvent(task_id=task_id, message="Nota excluída.", occurred_at=now_iso())); db.commit()
+
+
 @app.get("/operation-map", response_model=OperationMap)
 def operation_map(_: dict[str, str] = Depends(require_operator), db: Session = Depends(get_db)) -> OperationMap:
     areas = db.scalars(select(WorkArea)).all()
@@ -768,7 +1045,7 @@ def operation_map(_: dict[str, str] = Depends(require_operator), db: Session = D
 
     return OperationMap(
         areas=[WorkAreaOut.model_validate(area, from_attributes=True) for area in areas],
-        tasks=[TaskOut.model_validate(task, from_attributes=True) for task in tasks],
+        tasks=[task_out(task, db) for task in tasks],
         summary={
             "running": running,
             "pending": sum(area.pending for area in areas),

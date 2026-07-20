@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import Shell from "../components/Shell";
-import { useOperationMap } from "../app/shared";
+import { API_URL, authHeaders, useFilteredOperationMap } from "../app/shared";
 import "./FactoryDashboard.css";
 
 type MachineKind = "document" | "terminal" | "finance" | "triage";
@@ -112,10 +112,10 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
-function clampPan(position: Position, viewport: Position = defaultViewportSize): Position {
+function clampPan(position: Position, viewport: Position = defaultViewportSize, zoom = 1): Position {
   return {
-    x: clamp(position.x, viewport.x - factoryWorld.width, 0),
-    y: clamp(position.y, viewport.y - factoryWorld.height, 0)
+    x: clamp(position.x, viewport.x / zoom - factoryWorld.width, 0),
+    y: clamp(position.y, viewport.y / zoom - factoryWorld.height, 0)
   };
 }
 
@@ -495,12 +495,14 @@ function SocketHandle({ side, position, onMove }: {
 
 export default function FactoryDashboard() {
   const navigate = useNavigate();
-  const map = useOperationMap();
-  const [layout, setLayout] = useState<LayoutState>(() => loadLayout());
-  const [sockets, setSockets] = useState<SocketState>(() => loadSockets());
+  const map = useFilteredOperationMap();
+  const [layout, setLayout] = useState<LayoutState>(defaultLayout);
+  const [sockets, setSockets] = useState<SocketState>(defaultSockets);
+  const [canManageLayout, setCanManageLayout] = useState(false);
   const [designMode, setDesignMode] = useState(false);
   const [savedMessage, setSavedMessage] = useState("");
   const [viewportPan, setViewportPan] = useState<Position>({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
   const [viewportSize, setViewportSize] = useState<Position>(defaultViewportSize);
   const [isPanning, setIsPanning] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
@@ -522,12 +524,21 @@ export default function FactoryDashboard() {
       const rect = stage.getBoundingClientRect();
       const nextSize = { x: Math.round(rect.width), y: Math.round(rect.height) };
       setViewportSize(nextSize);
-      setViewportPan((current) => clampPan(current, nextSize));
+      setViewportPan((current) => clampPan(current, nextSize, zoom));
     };
     updateSize();
     const observer = new ResizeObserver(updateSize);
     observer.observe(stage);
     return () => observer.disconnect();
+  }, [zoom]);
+
+  useEffect(() => {
+    fetch(`${API_URL}/factory-layout`, { headers: authHeaders() }).then((response) => response.ok ? response.json() : null).then((body) => {
+      if (!body) return;
+      setCanManageLayout(Boolean(body.canManage));
+      if (Object.keys(body.layout ?? {}).length) setLayout(body.layout as LayoutState);
+      if (Object.keys(body.sockets ?? {}).length) setSockets(body.sockets as SocketState);
+    }).catch(() => undefined);
   }, []);
 
   function moveNode(id: LayoutId, position: Position) {
@@ -538,11 +549,10 @@ export default function FactoryDashboard() {
   }
 
   function resetLayout() {
-    localStorage.removeItem(layoutStorageKey);
-    localStorage.removeItem(socketStorageKey);
+    if (!canManageLayout) return;
     setLayout(defaultLayout);
     setSockets(defaultSockets);
-    setViewportPan(clampPan({ x: 0, y: 0 }, viewportSize));
+    setViewportPan(clampPan({ x: 0, y: 0 }, viewportSize, zoom));
     setSavedMessage("Layout resetado");
   }
 
@@ -559,10 +569,10 @@ export default function FactoryDashboard() {
     });
   }
 
-  function saveCurrentLayout() {
-    saveLayout(layout);
-    saveSockets(sockets);
-    setSavedMessage("Layout salvo");
+  async function saveCurrentLayout() {
+    if (!canManageLayout) return;
+    const response = await fetch(`${API_URL}/factory-layout`, { method: "PUT", headers: authHeaders({ "Content-Type": "application/json" }), body: JSON.stringify({ layout, sockets }) });
+    setSavedMessage(response.ok ? "Layout salvo no banco" : "Não foi possível salvar o layout");
   }
 
   function onWorldPointerDown(event: React.PointerEvent<HTMLDivElement>) {
@@ -590,9 +600,9 @@ export default function FactoryDashboard() {
       panRef.current.moved = true;
     }
     setViewportPan(clampPan({
-      x: Math.round(panRef.current.originX + deltaX / scale),
-      y: Math.round(panRef.current.originY + deltaY / scale)
-    }, viewportSize));
+      x: Math.round(panRef.current.originX + deltaX / (scale * zoom)),
+      y: Math.round(panRef.current.originY + deltaY / (scale * zoom))
+    }, viewportSize, zoom));
   }
 
   function onWorldPointerUp(event: React.PointerEvent<HTMLDivElement>) {
@@ -651,12 +661,14 @@ export default function FactoryDashboard() {
           <div className="fd-scale-shell">
         <div ref={stageRef} className={`fd-stage ${designMode ? "fd-stage-design" : ""} ${isPanning ? "fd-stage-panning" : ""}`}>
           <div className="fd-design-toolbar">
-            <button className={designMode ? "active" : ""} type="button" onClick={() => setDesignMode((value) => !value)}>
+            {canManageLayout && <><button className={designMode ? "active" : ""} type="button" onClick={() => setDesignMode((value) => !value)}>
               {designMode ? "Sair do design" : "Modo design"}
             </button>
             <button type="button" onClick={saveCurrentLayout}>Salvar posição</button>
-            <button type="button" onClick={() => setViewportPan(clampPan({ x: 0, y: 0 }, viewportSize))}>Centralizar visão</button>
             <button type="button" onClick={resetLayout}>Resetar layout</button>
+            </>}
+            <button type="button" onClick={() => setViewportPan(clampPan({ x: 0, y: 0 }, viewportSize, zoom))}>Centralizar visão</button>
+            <span className="fd-zoom-controls"><button type="button" onClick={() => setZoom((value) => Math.max(0.6, Number((value - 0.1).toFixed(1))))}>−</button><strong>{Math.round(zoom * 100)}%</strong><button type="button" onClick={() => setZoom((value) => Math.min(1.6, Number((value + 0.1).toFixed(1))))}>+</button></span>
             {savedMessage && <span>{savedMessage}</span>}
           </div>
 
@@ -665,7 +677,7 @@ export default function FactoryDashboard() {
             style={{
               width: factoryWorld.width,
               height: factoryWorld.height,
-              transform: `translate3d(${viewportPan.x}px, ${viewportPan.y}px, 0)`
+              transform: `translate3d(${viewportPan.x}px, ${viewportPan.y}px, 0) scale(${zoom})`
             }}
             onPointerDown={onWorldPointerDown}
             onPointerMove={onWorldPointerMove}

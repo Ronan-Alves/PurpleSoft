@@ -1,10 +1,11 @@
 import { useState, type ReactNode } from "react";
 import { Activity, BarChart3, Boxes, ChevronRight, CircleHelp, ClipboardList, Home, LogOut, Menu, Settings, Trophy, UserRound, Zap } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
-import { operatorTokenKey } from "../app/shared";
+import { operatorTokenKey, useUserFilter } from "../app/shared";
 
 export default function Shell({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
+  const { employees, assignee, setAssignee } = useUserFilter();
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const items = [
     [Home, "Visao Geral", "/"],
@@ -38,6 +39,7 @@ export default function Shell({ children }: { children: ReactNode }) {
             <p>Fluxo visual para BPO contabil e departamento pessoal</p>
           </div>
           <div className="topbar-actions">
+            <label className="global-user-filter">Responsável<select value={assignee} onChange={(event) => setAssignee(event.target.value)}><option value="todos">Todos os usuários</option>{employees.map((employee) => <option value={employee.name} key={employee.id}>{employee.name}</option>)}</select></label>
             <div className="score"><Trophy size={28} /><span>Nivel da Operacao<strong>Ouro</strong></span></div>
             <div className="score"><Zap size={28} /><span>Pontuacao<strong>2.560 pts</strong></span></div>
             <button className="user-button"><UserRound /> {localStorage.getItem("purplesoft_user") ?? "Gerente"}</button>

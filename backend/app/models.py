@@ -1,4 +1,4 @@
-from sqlalchemy import ForeignKey, String, Text
+from sqlalchemy import ForeignKey, LargeBinary, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -122,6 +122,7 @@ class WorkArea(Base):
     priority: Mapped[int] = mapped_column(default=0)
 
     tasks: Mapped[list["Task"]] = relationship(back_populates="area", cascade="all, delete-orphan")
+    employees: Mapped[list["Employee"]] = relationship(back_populates="area", cascade="all, delete-orphan")
 
 
 class Demand(Base):
@@ -146,6 +147,7 @@ class Task(Base):
     __tablename__ = "tasks"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    task_code: Mapped[str | None] = mapped_column(String(24), unique=True, index=True)
     title: Mapped[str] = mapped_column(String(160), nullable=False)
     client_name: Mapped[str] = mapped_column(String(120), nullable=False)
     status: Mapped[str] = mapped_column(String(40), nullable=False)
@@ -155,8 +157,85 @@ class Task(Base):
     station_id: Mapped[str | None] = mapped_column(String(80), index=True)
     requested_at: Mapped[str | None] = mapped_column(String(20))
     checklist_ready: Mapped[bool] = mapped_column(nullable=False, default=False)
+    customer_id: Mapped[str | None] = mapped_column(ForeignKey("customers.id"), index=True)
+    employee_name: Mapped[str | None] = mapped_column(String(160))
+    request_notes: Mapped[str | None] = mapped_column(Text)
 
     area: Mapped[WorkArea] = relationship(back_populates="tasks")
+
+
+class Employee(Base):
+    __tablename__ = "employees"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(160), nullable=False, unique=True)
+    area_id: Mapped[str] = mapped_column(ForeignKey("work_areas.id"), nullable=False, index=True)
+    active: Mapped[bool] = mapped_column(nullable=False, default=True)
+
+    area: Mapped[WorkArea] = relationship(back_populates="employees")
+
+
+class AdmissionWorkflowStep(Base):
+    __tablename__ = "admission_workflow_steps"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    task_id: Mapped[int] = mapped_column(ForeignKey("tasks.id"), nullable=False, index=True)
+    step_key: Mapped[str] = mapped_column(String(40), nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="locked")
+    assignee: Mapped[str | None] = mapped_column(String(120))
+    released_at: Mapped[str | None] = mapped_column(String(40))
+    completed_at: Mapped[str | None] = mapped_column(String(40))
+
+
+class AdmissionChecklist(Base):
+    __tablename__ = "admission_checklists"
+
+    task_id: Mapped[int] = mapped_column(ForeignKey("tasks.id"), primary_key=True)
+    form_data: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    released: Mapped[bool] = mapped_column(nullable=False, default=False)
+    updated_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
+class AdmissionAttachment(Base):
+    __tablename__ = "admission_attachments"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    task_id: Mapped[int] = mapped_column(ForeignKey("tasks.id"), nullable=False, index=True)
+    document_key: Mapped[str] = mapped_column(String(80), nullable=False)
+    file_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(120), nullable=False, default="application/octet-stream")
+    content: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    updated_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
+class TaskNote(Base):
+    __tablename__ = "task_notes"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    task_id: Mapped[int] = mapped_column(ForeignKey("tasks.id"), nullable=False, index=True)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    author: Mapped[str] = mapped_column(String(160), nullable=False)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+    updated_at: Mapped[str | None] = mapped_column(String(40))
+
+
+class TaskEvent(Base):
+    __tablename__ = "task_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    task_id: Mapped[int] = mapped_column(ForeignKey("tasks.id"), nullable=False, index=True)
+    message: Mapped[str] = mapped_column(String(500), nullable=False)
+    occurred_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
+class FactoryLayout(Base):
+    __tablename__ = "factory_layouts"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    layout: Mapped[str] = mapped_column(Text, nullable=False)
+    sockets: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[str] = mapped_column(String(40), nullable=False)
+    updated_by: Mapped[str] = mapped_column(String(160), nullable=False)
 
 
 class Procedure(Base):

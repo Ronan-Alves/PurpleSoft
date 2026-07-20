@@ -465,3 +465,13 @@ O proximo bloco importante do sistema deve ser o motor de fluxo:
 - separar BPO, escritorio e cliente;
 - controlar permissoes por papel;
 - gravar historico de cada movimento na esteira.
+# Massa de teste das esteiras
+
+Para criar registros variados de admissões, rescisões e férias e validar as relações e códigos únicos das tarefas, execute:
+
+```bash
+cd /Users/ronanalves/PlusTech/PurpleBPO/PurpleSoft/backend
+.venv/bin/python scripts/populate_admission_test_data.py
+```
+
+A rotina é idempotente: ela substitui apenas os registros gerados por ela mesma.

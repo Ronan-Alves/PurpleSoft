@@ -2,11 +2,11 @@ import React, { useMemo, useRef, useState } from "react";
 import { Activity, BarChart3, Bell, Building2, CalendarClock, CheckCircle2, ChevronLeft, ChevronRight, ClipboardList, FileText, GitBranch, ListChecks, PackageCheck, PlayCircle, ShieldCheck, UserRound, UsersRound, Zap } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import Shell from "../components/Shell";
-import { departmentCatalog, departmentZones, processPoints, useOperationMap } from "../app/shared";
+import { departmentCatalog, departmentZones, processPoints, useFilteredOperationMap } from "../app/shared";
 import type { Task, WorkArea } from "../app/shared";
 
 export default function Dashboard() {
-  const map = useOperationMap();
+  const map = useFilteredOperationMap();
   const [rightCollapsed, setRightCollapsed] = useState(false);
   return (
     <Shell>

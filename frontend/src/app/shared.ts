@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { createContext, createElement, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
 export const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8088";
 
@@ -14,8 +14,16 @@ export type WorkArea = {
   priority: number;
 };
 
+export type Employee = {
+  id: string;
+  name: string;
+  area_id: string;
+  active: boolean;
+};
+
 export type Task = {
   id: number;
+  task_code?: string | null;
   title: string;
   client_name: string;
   status: string;
@@ -25,6 +33,10 @@ export type Task = {
   station_id?: string | null;
   requested_at?: string | null;
   checklist_ready?: boolean;
+  customer_id?: string | null;
+  employee_name?: string | null;
+  request_notes?: string | null;
+  workflow_stage?: string | null;
 };
 
 export type OperationMap = {
@@ -492,6 +504,41 @@ export function useOperationMap() {
   }, []);
 
   return data;
+}
+
+type UserFilterState = {
+  employees: Employee[];
+  assignee: string;
+  setAssignee: (assignee: string) => void;
+};
+
+const UserFilterContext = createContext<UserFilterState | null>(null);
+
+export function UserFilterProvider({ children }: { children: ReactNode }) {
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [assignee, setAssignee] = useState("todos");
+
+  useEffect(() => {
+    fetch(`${API_URL}/employees`, { headers: authHeaders() })
+      .then((response) => response.ok ? response.json() : { employees: [] })
+      .then((body: { employees: Employee[] }) => setEmployees(body.employees))
+      .catch(() => setEmployees([]));
+  }, []);
+
+  const value = useMemo(() => ({ employees, assignee, setAssignee }), [employees, assignee]);
+  return createElement(UserFilterContext.Provider, { value }, children);
+}
+
+export function useUserFilter() {
+  const context = useContext(UserFilterContext);
+  if (!context) throw new Error("O filtro global de usuário deve estar dentro do UserFilterProvider.");
+  return context;
+}
+
+export function useFilteredOperationMap() {
+  const map = useOperationMap();
+  const { assignee } = useUserFilter();
+  return useMemo(() => assignee === "todos" ? map : { ...map, tasks: map.tasks.filter((task) => task.assignee === assignee) }, [map, assignee]);
 }
 
 export function isLoggedIn() {
