@@ -1935,6 +1935,10 @@ a {
 .priority-badge.alta { background: #fff0d2; color: #965b00; }
 .priority-badge.normal { background: #e5effb; color: #2867a8; }
 .priority-badge.baixa { background: #e9f6ed; color: #35764a; }
+.deadline-badge { display: inline-flex; align-items: center; border-radius: 999px; padding: 4px 8px; font-size: .72rem; font-weight: 900; white-space: nowrap; }
+.deadline-badge.future { background: #eef3f8; color: #52657d; }
+.deadline-badge.due-today { background: #fff1c7; color: #8a5a00; }
+.deadline-badge.overdue { background: #fde4e4; color: #b52f37; }
 .unassigned { color: #a45c18; font-weight: 800; }
 
 .personnel-summary {
@@ -1961,6 +1965,7 @@ a {
 .personnel-summary > button:hover { border-color: #8fb7e4; transform: translateY(-1px); }
 .personnel-summary > button.active { border-color: #236cd1; background: #edf5ff; box-shadow: 0 0 0 2px rgb(35 108 209 / 12%); }
 .personnel-queue-filters { margin-top: 14px; margin-bottom: 8px; }
+.workstation-api-queue { display: grid; gap: 9px; margin-bottom: 12px; }
 
 .personnel-summary svg { color: #236cd1; }
 .personnel-summary strong { color: #14213d; font-size: 1.45rem; }
@@ -2049,6 +2054,15 @@ a {
 .management-kpis article.danger { border-color: #efb9b9; background: #fff7f7; }
 .management-kpis article.danger svg, .management-kpis article.danger strong { color: #c43f46; }
 .management-kpis article.positive svg, .management-kpis article.positive strong { color: #33845a; }
+.management-health { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+.management-health article { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 4px 8px; border: 1px solid #d9e4f1; border-left: 3px solid #6e8daf; border-radius: 7px; padding: 9px 11px; background: #fff; }
+.management-health span { color: #607187; font-size: .7rem; font-weight: 800; }
+.management-health strong { color: #17253d; font-size: 1.1rem; }
+.management-health small { grid-column: 1 / -1; color: #7a899b; font-size: .64rem; }
+.management-health article.danger { border-left-color: #c43f46; }
+.management-health article.danger strong { color: #c43f46; }
+.management-health article.positive { border-left-color: #33845a; }
+.management-health article.positive strong { color: #33845a; }
 .metric-help { position: relative; display: inline-flex; align-items: center; vertical-align: middle; margin-left: 2px; color: #7890a8; cursor: help; }
 .metric-help svg { color: currentColor !important; }
 .metric-help::after { position: absolute; z-index: 30; left: 50%; bottom: calc(100% + 8px); width: 230px; border-radius: 7px; padding: 8px 10px; background: #17253d; color: #fff; content: attr(data-tooltip); font-size: .7rem; font-weight: 600; line-height: 1.35; opacity: 0; pointer-events: none; transform: translate(-50%, 4px); transition: opacity .15s ease, transform .15s ease; box-shadow: 0 8px 22px rgb(15 30 50 / 22%); }
@@ -2062,17 +2076,35 @@ a {
 .management-bars article { display: grid; grid-template-rows: auto 150px auto; align-items: end; justify-items: center; flex: 1; gap: 5px; }
 .management-bars article > div { display: flex; align-items: end; width: min(34px, 75%); height: 150px; border-radius: 5px 5px 0 0; background: #edf3f9; overflow: hidden; }
 .management-bars article > div span { display: block; width: 100%; border-radius: 5px 5px 0 0; background: linear-gradient(#6ea9ee, #236cd1); }
+.management-bars article > div span.created { width: 50%; background: linear-gradient(#b49bea, #7357c8); }
+.management-bars article > div span.completed { width: 50%; background: linear-gradient(#6ea9ee, #236cd1); }
 .management-bars article strong { font-size: .78rem; }
 .management-bars article small { font-size: .66rem; }
+.management-chart-legend { display: flex !important; justify-content: flex-end; gap: 12px !important; }
+.management-chart-legend span { display: inline-flex; align-items: center; gap: 5px; color: #63738a; font-size: .68rem; }
+.management-chart-legend i { width: 9px; height: 9px; border-radius: 2px; }
+.management-chart-legend i.created { background: #7357c8; }
+.management-chart-legend i.completed { background: #236cd1; }
 .management-stations > article { display: grid; grid-template-columns: minmax(120px, 1fr) repeat(3, auto); align-items: center; gap: 10px; border-top: 1px solid #e2eaf2; padding-top: 10px; }
 .management-stations > article span { color: #63738a; font-size: .7rem; }
 .management-stations > article span.danger { color: #c43f46; }
 .management-employees { display: grid; gap: 10px; }
+.management-monthly-distribution { display: grid; gap: 10px; }
+.management-monthly-distribution tbody td:not(:first-child) { text-align: center; }
+.management-distributions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.management-distributions > section { display: grid; align-content: start; gap: 9px; }
+.management-distributions > section > div:first-child { display: grid; gap: 3px; margin-bottom: 3px; }
+.management-distributions h3 { margin: 0; }
+.management-distributions small { color: #6d7d90; }
+.management-distributions article { display: grid; grid-template-columns: minmax(100px, .7fr) minmax(80px, 1fr) auto; align-items: center; gap: 8px; color: #53647a; font-size: .72rem; }
+.management-distributions article > div { overflow: hidden; height: 7px; border-radius: 999px; background: #e8eff6; }
+.management-distributions article > div i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #6e9fd4, #236cd1); }
+.management-distributions article strong { min-width: 20px; text-align: right; color: #17253d; }
 .efficiency-badge { display: inline-flex; min-width: 58px; justify-content: center; border-radius: 999px; padding: 4px 7px; font-size: .7rem; font-weight: 900; }
 .efficiency-badge.positive { background: #e4f5ea; color: #287246; }
 .efficiency-badge.negative { background: #fde8e8; color: #b5363d; }
-@media (max-width: 1250px) { .management-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-@media (max-width: 900px) { .management-dashboard-grid { grid-template-columns: 1fr; } .management-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 1250px) { .management-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } .management-health { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 900px) { .management-dashboard-grid, .management-distributions { grid-template-columns: 1fr; } .management-kpis, .management-health { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .personnel-task-queue { margin-top: 14px; }
 .task-queue-table th button { border: 0; padding: 0; background: transparent; color: inherit; font: inherit; font-weight: 900; cursor: pointer; }
 .task-queue-table th button:hover { color: #236cd1; }

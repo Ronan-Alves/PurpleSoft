@@ -84,11 +84,21 @@ class PersonnelAnalyticsSummary(BaseModel):
     activeOnTimeRate: float
     averageCycleDays: float
     efficiencyChange: float
+    checklistPending: int
+    unassigned: int
+    dueSoon: int
+    netFlow: int
 
 
 class PersonnelAnalyticsTrendItem(BaseModel):
     label: str
+    created: int
     completed: int
+
+
+class PersonnelAnalyticsDistributionItem(BaseModel):
+    label: str
+    count: int
 
 
 class PersonnelEmployeeMetric(BaseModel):
@@ -109,12 +119,27 @@ class PersonnelStationMetric(BaseModel):
     overdue: int
 
 
+class PersonnelMonthlyEmployeeDistribution(BaseModel):
+    month: str
+    monthLabel: str
+    name: str
+    admissions: int
+    terminations: int
+    vacations: int
+    payroll: int
+    total: int
+
+
 class PersonnelAnalyticsOut(BaseModel):
     periodDays: int
     summary: PersonnelAnalyticsSummary
     trend: list[PersonnelAnalyticsTrendItem]
     employees: list[PersonnelEmployeeMetric]
     stations: list[PersonnelStationMetric]
+    aging: list[PersonnelAnalyticsDistributionItem]
+    priorities: list[PersonnelAnalyticsDistributionItem]
+    stages: list[PersonnelAnalyticsDistributionItem]
+    monthlyDistribution: list[PersonnelMonthlyEmployeeDistribution]
 
 
 class PersonnelRequestIn(BaseModel):

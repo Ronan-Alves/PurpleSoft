@@ -72,9 +72,11 @@ from .schemas import (
     OfficesOut,
     PersonnelRequestIn,
     PersonnelAnalyticsOut,
+    PersonnelAnalyticsDistributionItem,
     PersonnelAnalyticsSummary,
     PersonnelAnalyticsTrendItem,
     PersonnelEmployeeMetric,
+    PersonnelMonthlyEmployeeDistribution,
     PersonnelStationMetric,
     PersonnelSettingsIn,
     PersonnelSettingsOut,
@@ -903,6 +905,15 @@ def personnel_analytics(days: int = Query(default=30, ge=7, le=365), assignee: s
         value = completion(task)
         return bool(value and start <= value < end)
 
+    def requested_between(task: Task, start: datetime, end: datetime) -> bool:
+        if not task.requested_at:
+            return False
+        try:
+            value = datetime.strptime(task.requested_at, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            return start <= value < end
+        except ValueError:
+            return False
+
     def overdue(task: Task) -> bool:
         deadline = task_deadline(task, settings_row, now)
         return task.status != "done" and bool(deadline and deadline < now.date().isoformat())
@@ -936,7 +947,7 @@ def personnel_analytics(days: int = Query(default=30, ge=7, le=365), assignee: s
     bucket_start = current_start
     while bucket_start < now:
         bucket_end = min(bucket_start + timedelta(days=7), now)
-        trend.append(PersonnelAnalyticsTrendItem(label=f"{bucket_start.day:02d}/{bucket_start.month:02d}", completed=sum(completed_between(task, bucket_start, bucket_end) for task in tasks)))
+        trend.append(PersonnelAnalyticsTrendItem(label=f"{bucket_start.day:02d}/{bucket_start.month:02d}", created=sum(requested_between(task, bucket_start, bucket_end) for task in tasks), completed=sum(completed_between(task, bucket_start, bucket_end) for task in tasks)))
         bucket_start = bucket_end
 
     employee_names = sorted({task.assignee for task in tasks if task.assignee})
@@ -953,7 +964,41 @@ def personnel_analytics(days: int = Query(default=30, ge=7, le=365), assignee: s
     station_metrics = [PersonnelStationMetric(stationId=station_id, label=label, active=sum(task.status != "done" and task.station_id == station_id for task in tasks), completed=sum(task.station_id == station_id and completed_between(task, current_start, now) for task in tasks), overdue=sum(task.station_id == station_id and overdue(task) for task in tasks)) for station_id, label in station_labels.items()]
 
     overdue_count = sum(overdue(task) for task in active_tasks)
-    return PersonnelAnalyticsOut(periodDays=days, summary=PersonnelAnalyticsSummary(active=len(active_tasks), overdue=overdue_count, completed=len(current_completed), slaRate=round(sum(on_time(task) for task in sla_tasks) / len(sla_tasks) * 100, 1) if sla_tasks else 0, activeOnTimeRate=round((len(active_tasks) - overdue_count) / len(active_tasks) * 100, 1) if active_tasks else 100, averageCycleDays=round(sum(cycles) / len(cycles), 1) if cycles else 0, efficiencyChange=rate(len(current_completed), len(previous_completed))), trend=trend, employees=employee_metrics, stations=station_metrics)
+    today_value = now.date().isoformat()
+    soon_value = (now + timedelta(days=max(settings_row.warning_days, 1))).date().isoformat()
+    due_soon = sum(bool((deadline := task_deadline(task, settings_row, now)) and today_value <= deadline <= soon_value) for task in active_tasks)
+    aging_counts = {"Até 1 dia": 0, "2 a 3 dias": 0, "4 a 7 dias": 0, "Mais de 7 dias": 0}
+    for task in active_tasks:
+        try:
+            age = max((now.date() - datetime.strptime(task.requested_at or "", "%Y-%m-%d").date()).days, 0)
+        except ValueError:
+            continue
+        bucket = "Até 1 dia" if age <= 1 else "2 a 3 dias" if age <= 3 else "4 a 7 dias" if age <= 7 else "Mais de 7 dias"
+        aging_counts[bucket] += 1
+    priority_labels = {"critica": "Crítica", "alta": "Alta", "normal": "Normal", "baixa": "Baixa"}
+    priority_items = [PersonnelAnalyticsDistributionItem(label=label, count=sum(task.priority == key for task in active_tasks)) for key, label in priority_labels.items()]
+    stage_labels = {"conference": "Checklist", "registration": "Cadastro", "esocial": "eSocial", "contracts": "Contratos", "communication": "Comunicação"}
+    stage_counts = {label: 0 for label in stage_labels.values()}
+    for task in [item for item in active_tasks if item.station_id == "admissoes"]:
+        step = db.scalar(select(AdmissionWorkflowStep.step_key).where(AdmissionWorkflowStep.task_id == task.id, AdmissionWorkflowStep.status != "done").order_by(AdmissionWorkflowStep.id)) or "conference"
+        stage_counts[stage_labels.get(step, step)] = stage_counts.get(stage_labels.get(step, step), 0) + 1
+    month_keys: list[str] = []
+    month_year, month_number = now.year, now.month
+    for _ in range(12):
+        month_keys.append(f"{month_year:04d}-{month_number:02d}")
+        month_number -= 1
+        if month_number == 0:
+            month_number, month_year = 12, month_year - 1
+    monthly_distribution: list[PersonnelMonthlyEmployeeDistribution] = []
+    station_fields = {"admissoes": "admissions", "rescisoes": "terminations", "ferias": "vacations", "folha": "payroll"}
+    for month_key in month_keys:
+        for name in employee_names:
+            employee_month_tasks = [task for task in tasks if task.assignee == name and (task.requested_at or "").startswith(month_key)]
+            counts = {field: sum(task.station_id == station_id for task in employee_month_tasks) for station_id, field in station_fields.items()}
+            if employee_month_tasks:
+                monthly_distribution.append(PersonnelMonthlyEmployeeDistribution(month=month_key, monthLabel=f"{month_key[5:7]}/{month_key[:4]}", name=name, total=len(employee_month_tasks), **counts))
+    created_current = sum(requested_between(task, current_start, now) for task in tasks)
+    return PersonnelAnalyticsOut(periodDays=days, summary=PersonnelAnalyticsSummary(active=len(active_tasks), overdue=overdue_count, completed=len(current_completed), slaRate=round(sum(on_time(task) for task in sla_tasks) / len(sla_tasks) * 100, 1) if sla_tasks else 0, activeOnTimeRate=round((len(active_tasks) - overdue_count) / len(active_tasks) * 100, 1) if active_tasks else 100, averageCycleDays=round(sum(cycles) / len(cycles), 1) if cycles else 0, efficiencyChange=rate(len(current_completed), len(previous_completed)), checklistPending=sum(not task.checklist_ready for task in active_tasks), unassigned=sum(not task.assignee for task in active_tasks), dueSoon=due_soon, netFlow=created_current - len(current_completed)), trend=trend, employees=employee_metrics, stations=station_metrics, aging=[PersonnelAnalyticsDistributionItem(label=label, count=count) for label, count in aging_counts.items()], priorities=priority_items, stages=[PersonnelAnalyticsDistributionItem(label=label, count=count) for label, count in stage_counts.items()], monthlyDistribution=monthly_distribution)
 
 
 @app.post("/personnel-requests", response_model=TaskOut, status_code=201)
