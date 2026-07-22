@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     operational_email: str = "gerente@purplebpo.com.br"
     operational_password: str = "purple123"
     manager_email: str = "gerente@purplebpo.com.br"
+    load_demo_data: bool = False
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

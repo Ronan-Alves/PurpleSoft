@@ -363,6 +363,18 @@ def on_startup() -> None:
         if changed:
             db.commit()
 
+    if settings.load_demo_data:
+        from scripts.populate_admission_test_data import MARKER as test_marker, run as populate_test_data
+        from scripts.populate_presentation_data import MARKER as presentation_marker, run as populate_presentation_data
+
+        with SessionLocal() as db:
+            has_presentation_data = db.scalar(select(Task.id).where(Task.request_notes == presentation_marker).limit(1))
+            has_test_data = db.scalar(select(Task.id).where(Task.request_notes == test_marker).limit(1))
+        if not has_presentation_data:
+            populate_presentation_data()
+        if not has_test_data:
+            populate_test_data()
+
 
 @app.get("/health")
 def health() -> dict[str, str]:
