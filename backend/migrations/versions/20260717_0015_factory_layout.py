@@ -13,6 +13,8 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
+    if sa.inspect(op.get_bind()).has_table("factory_layouts"):
+        return
     op.create_table("factory_layouts", sa.Column("id", sa.String(40), primary_key=True), sa.Column("layout", sa.Text(), nullable=False), sa.Column("sockets", sa.Text(), nullable=False), sa.Column("updated_at", sa.String(40), nullable=False), sa.Column("updated_by", sa.String(160), nullable=False))
 
 def downgrade() -> None:

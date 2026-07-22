@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: purplesoft-demo
+    runtime: python
+    plan: free
+    buildCommand: pip install -r backend/requirements.txt && npm ci --prefix frontend && VITE_API_URL= npm run build --prefix frontend
+    startCommand: cd backend && alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: purplesoft-demo-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: OPERATIONAL_EMAIL
+        value: gerente@purplebpo.com.br
+      - key: OPERATIONAL_PASSWORD
+        value: purple123
+      - key: CORS_ORIGINS
+        value: "*"
+
+databases:
+  - name: purplesoft-demo-db
+    plan: free
+    databaseName: purplesoft
+    user: purplesoft
+    postgresMajorVersion: "16"

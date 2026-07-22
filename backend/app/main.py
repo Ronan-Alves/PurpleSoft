@@ -10,6 +10,7 @@ from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFi
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.responses import FileResponse, Response
+from fastapi.staticfiles import StaticFiles
 from jose import jwt
 from jose.exceptions import JWTError
 from passlib.context import CryptContext
@@ -1290,3 +1291,18 @@ def audit_logs(
         query = query.where(AuditLog.entity_type == entity_type)
     logs = db.scalars(query.order_by(AuditLog.occurred_at.desc()).limit(limit)).all()
     return AuditLogsOut(logs=[audit_log_to_out(log) for log in logs])
+
+
+# Em produção, entrega o frontend Vite no mesmo domínio da API.
+frontend_dist = project_root / "frontend" / "dist"
+if frontend_dist.exists():
+    assets_dir = frontend_dist / "assets"
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="frontend-assets")
+
+    @app.get("/{frontend_path:path}", include_in_schema=False)
+    def frontend(frontend_path: str) -> FileResponse:
+        requested_file = frontend_dist / frontend_path
+        if frontend_path and requested_file.is_file():
+            return FileResponse(requested_file)
+        return FileResponse(frontend_dist / "index.html")

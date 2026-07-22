@@ -16,6 +16,9 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    columns = {column["name"] for column in sa.inspect(op.get_bind()).get_columns("tasks")}
+    if {"station_id", "requested_at", "checklist_ready"}.issubset(columns):
+        return
     op.add_column("tasks", sa.Column("station_id", sa.String(80), nullable=True))
     op.add_column("tasks", sa.Column("requested_at", sa.String(20), nullable=True))
     op.add_column("tasks", sa.Column("checklist_ready", sa.Boolean(), nullable=False, server_default=sa.false()))

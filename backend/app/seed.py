@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 
-from .models import Customer, CustomerServiceInterest, Employee, Office, Task, WorkArea
+from .models import Customer, CustomerServiceInterest, Employee, Office, PersonnelSettings, Task, WorkArea
 
 
 AREAS = [
@@ -104,6 +104,9 @@ DEMO_CUSTOMERS = [
 
 
 def seed_database(db: Session) -> None:
+    if not db.get(PersonnelSettings, "default"):
+        db.add(PersonnelSettings(id="default"))
+
     if not db.query(WorkArea).first():
         db.add_all(
             WorkArea(id=id_, name=name, kind=kind, status=status, position_x=x, position_y=y, wip=wip, pending=pending, priority=priority)

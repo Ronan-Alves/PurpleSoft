@@ -16,6 +16,9 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    columns = {column["name"] for column in sa.inspect(op.get_bind()).get_columns("tasks")}
+    if {"customer_id", "employee_name", "request_notes"}.issubset(columns):
+        return
     op.add_column("tasks", sa.Column("customer_id", sa.String(64), nullable=True))
     op.add_column("tasks", sa.Column("employee_name", sa.String(160), nullable=True))
     op.add_column("tasks", sa.Column("request_notes", sa.Text(), nullable=True))

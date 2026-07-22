@@ -545,7 +545,20 @@ export function useFilteredOperationMap() {
 }
 
 export function isLoggedIn() {
-  return Boolean(localStorage.getItem(operatorTokenKey));
+  const token = localStorage.getItem(operatorTokenKey);
+  if (!token) return false;
+
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1])) as { exp?: number };
+    const valid = typeof payload.exp === "number" && payload.exp * 1000 > Date.now();
+    if (valid) return true;
+  } catch {
+    // Tokens ausentes, malformados ou antigos devem iniciar uma nova sessão.
+  }
+
+  localStorage.removeItem(operatorTokenKey);
+  localStorage.removeItem("purplesoft_user");
+  return false;
 }
 
 export function authHeaders(extra?: HeadersInit): HeadersInit {

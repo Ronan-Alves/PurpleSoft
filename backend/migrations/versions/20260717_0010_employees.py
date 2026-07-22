@@ -16,6 +16,8 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    if sa.inspect(op.get_bind()).has_table("employees"):
+        return
     op.create_table(
         "employees",
         sa.Column("id", sa.String(64), primary_key=True),

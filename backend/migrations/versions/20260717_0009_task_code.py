@@ -16,6 +16,9 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    columns = {column["name"] for column in sa.inspect(op.get_bind()).get_columns("tasks")}
+    if "task_code" in columns:
+        return
     op.add_column("tasks", sa.Column("task_code", sa.String(24), nullable=True))
     op.execute("UPDATE tasks SET task_code = 'T-' || LPAD(id::text, 6, '0') WHERE task_code IS NULL")
     op.create_index("ix_tasks_task_code", "tasks", ["task_code"], unique=True)

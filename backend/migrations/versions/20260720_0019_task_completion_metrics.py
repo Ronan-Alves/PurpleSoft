@@ -15,6 +15,9 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    columns = {column["name"] for column in sa.inspect(op.get_bind()).get_columns("tasks")}
+    if "completed_at" in columns:
+        return
     op.add_column("tasks", sa.Column("completed_at", sa.String(40)))
     op.execute("""
         UPDATE tasks

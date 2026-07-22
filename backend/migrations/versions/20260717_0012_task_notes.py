@@ -13,6 +13,8 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
+    if sa.inspect(op.get_bind()).has_table("task_notes"):
+        return
     op.create_table("task_notes", sa.Column("id", sa.Integer(), primary_key=True), sa.Column("task_id", sa.Integer(), sa.ForeignKey("tasks.id"), nullable=False), sa.Column("body", sa.Text(), nullable=False), sa.Column("author", sa.String(160), nullable=False), sa.Column("created_at", sa.String(40), nullable=False), sa.Column("updated_at", sa.String(40)))
     op.create_index("ix_task_notes_task_id", "task_notes", ["task_id"])
 
